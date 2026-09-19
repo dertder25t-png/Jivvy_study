@@ -1,0 +1,10 @@
+project_id = "study-app"
+
+[functions.parse-syllabus]
+verify_jwt = true
+
+[functions.rewrite-cards]
+verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true

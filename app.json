@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Study App",
+    "slug": "study-app",
+    "scheme": "studyapp",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.example.studyapp"
+    },
+    "android": {
+      "package": "com.example.studyapp"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "Study App",
+      "shortName": "Study",
+      "themeColor": "#4F46E5",
+      "backgroundColor": "#141413"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-notifications",
+        {
+          "color": "#4F46E5"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Pick a photo of your syllabus.",
+          "cameraPermission": "Take a photo of your syllabus."
+        }
+      ]
+    ],
+    "icon": "./assets/icon.png"
+  }
+}
