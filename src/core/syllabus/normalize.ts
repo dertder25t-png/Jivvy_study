@@ -52,9 +52,20 @@ export interface DraftExam {
   assignment_index: number;
 }
 
+export interface DraftQuiz {
+  title: string;
+  type: string | null;
+  frequency: string | null;
+  due_at: string | null;
+  due_is_approximate: boolean;
+  points_possible: number | null;
+  component_key: string | null;
+  topic_indexes: number[];
+}
+
 export interface ParseIssue {
   severity: 'warn' | 'info';
-  field: 'weights' | 'dates' | 'exams' | 'topics' | 'policy' | 'general';
+  field: 'weights' | 'dates' | 'exams' | 'quizzes' | 'topics' | 'policy' | 'general';
   message: string;
 }
 
@@ -70,6 +81,7 @@ export interface NormalizedSyllabus {
   components: DraftComponent[];
   assignments: DraftAssignment[];
   exams: DraftExam[];
+  quizzes: DraftQuiz[];
   topics: DraftTopic[];
   late_policy: LatePolicy;
   attendance_policy: AttendancePolicy;
@@ -326,6 +338,45 @@ export function normalizeParse(
       location: m.location,
     }));
 
+  // ---- quizzes ---------------------------------------------------------------
+  const quizzes: DraftQuiz[] = [];
+  let quizApprox = 0;
+  for (const q of parsed.quizzes) {
+    let date = validYmd(q.due_date);
+    let approximate = q.due_is_approximate;
+    if (date) date = fixYear(date, term);
+    else if (q.due_week != null) {
+      date = addDaysYmd(weekToDate(q.due_week), 4);
+      approximate = true;
+    } else approximate = true;
+    if (approximate) quizApprox++;
+
+    // Coverage
+    let idxs = new Set<number>();
+    for (const w of q.covers_weeks) topics.forEach((t, i) => t.week_no === w && idxs.add(i));
+    for (const name of q.covers_topics) {
+      topics.forEach((t, i) => topicMatchScore(name, t.title) >= 0.6 || overlap(name, t.title) >= 0.6 ? idxs.add(i) : undefined);
+    }
+
+    quizzes.push({
+      title: q.title,
+      type: q.type,
+      frequency: q.frequency,
+      due_at: date ? zonedToUtc(date, validTime(q.due_time, '23:59'), tz).toISOString() : null,
+      due_is_approximate: approximate,
+      points_possible: q.points_possible,
+      component_key: findComponent(q.component_name, 'quiz'),
+      topic_indexes: [...idxs].sort((a, b) => a - b),
+    });
+  }
+  if (quizApprox > 0) {
+    issues.push({
+      severity: 'info',
+      field: 'dates',
+      message: `${quizApprox} quiz due date${quizApprox === 1 ? ' is' : 's are'} approximate. They're marked "around" until you set them.`,
+    });
+  }
+
   return {
     course: {
       name: parsed.course.name,
@@ -338,6 +389,7 @@ export function normalizeParse(
     components,
     assignments,
     exams,
+    quizzes,
     topics,
     late_policy,
     attendance_policy: {

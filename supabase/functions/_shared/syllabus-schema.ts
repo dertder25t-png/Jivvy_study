@@ -50,6 +50,25 @@ export interface ParsedSyllabus {
     covers_weeks: number[];
     covers_topics: string[];
   }>;
+  quizzes: Array<{
+    title: string;
+    type: 'online' | 'paper' | 'in_class' | 'other' | null;
+    frequency: string | null; // "weekly", "bi-weekly", null if one-time
+    due_date: string | null;
+    due_time: string | null;
+    due_week: number | null;
+    due_is_approximate: boolean;
+    points_possible: number | null;
+    component_name: string | null;
+    covers_weeks: number[];
+    covers_topics: string[];
+    notes: string | null; // format, allowed materials, etc
+  }>;
+  test_info: {
+    formats: string[]; // "multiple choice", "essay", "short answer"
+    preparation_notes: string | null; // study tips, what to bring
+    retake_policy: string | null;
+  };
   topics: Array<{
     week_no: number | null;
     starts_on: string | null;
@@ -79,7 +98,7 @@ const nullable = (type: string) => ({ type: [type, 'null'] });
 export const SYLLABUS_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['course', 'meetings', 'grade_components', 'assignments', 'exams', 'topics', 'policies', 'warnings'],
+  required: ['course', 'meetings', 'grade_components', 'assignments', 'exams', 'quizzes', 'test_info', 'topics', 'policies', 'warnings'],
   properties: {
     course: {
       type: 'object',
@@ -161,6 +180,41 @@ export const SYLLABUS_JSON_SCHEMA = {
           covers_weeks: { type: 'array', items: { type: 'integer' } },
           covers_topics: { type: 'array', items: { type: 'string' } },
         },
+      },
+    },
+    quizzes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'title', 'type', 'frequency', 'due_date', 'due_time', 'due_week', 'due_is_approximate',
+          'points_possible', 'component_name', 'covers_weeks', 'covers_topics', 'notes',
+        ],
+        properties: {
+          title: { type: 'string' },
+          type: { type: ['string', 'null'], enum: ['online', 'paper', 'in_class', 'other', null] },
+          frequency: nullable('string'),
+          due_date: nullable('string'),
+          due_time: nullable('string'),
+          due_week: nullable('integer'),
+          due_is_approximate: { type: 'boolean' },
+          points_possible: nullable('number'),
+          component_name: nullable('string'),
+          covers_weeks: { type: 'array', items: { type: 'integer' } },
+          covers_topics: { type: 'array', items: { type: 'string' } },
+          notes: nullable('string'),
+        },
+      },
+    },
+    test_info: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['formats', 'preparation_notes', 'retake_policy'],
+      properties: {
+        formats: { type: 'array', items: { type: 'string' } },
+        preparation_notes: nullable('string'),
+        retake_policy: nullable('string'),
       },
     },
     topics: {
@@ -256,6 +310,27 @@ export function coerceParsed(input: unknown): ParsedSyllabus {
         covers_weeks: arr<number>(e.covers_weeks),
         covers_topics: arr<string>(e.covers_topics),
       })),
+    quizzes: arr<ParsedSyllabus['quizzes'][number]>(x.quizzes)
+      .filter((q) => q && typeof q.title === 'string')
+      .map((q) => ({
+        title: q.title,
+        type: (['online', 'paper', 'in_class', 'other'] as const).includes(q.type) ? q.type : null,
+        frequency: q.frequency ?? null,
+        due_date: q.due_date ?? null,
+        due_time: q.due_time ?? null,
+        due_week: q.due_week ?? null,
+        due_is_approximate: !!q.due_is_approximate,
+        points_possible: q.points_possible ?? null,
+        component_name: q.component_name ?? null,
+        covers_weeks: arr<number>(q.covers_weeks),
+        covers_topics: arr<string>(q.covers_topics),
+        notes: q.notes ?? null,
+      })),
+    test_info: {
+      formats: arr<string>(x.test_info?.formats ?? []),
+      preparation_notes: x.test_info?.preparation_notes ?? null,
+      retake_policy: x.test_info?.retake_policy ?? null,
+    },
     topics: arr<ParsedSyllabus['topics'][number]>(x.topics)
       .filter((t) => t && typeof t.title === 'string')
       .map((t) => ({ week_no: t.week_no ?? null, starts_on: t.starts_on ?? null, title: t.title, readings: t.readings ?? null })),

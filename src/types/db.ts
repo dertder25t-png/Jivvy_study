@@ -120,6 +120,23 @@ export interface ExamCoverage {
   topic_id: string;
 }
 
+export interface Quiz {
+  id: string;
+  course_id: string;
+  assignment_id: string | null;
+  title: string;
+  type: string | null; // online, paper, in_class, other
+  frequency: string | null;
+  due_at: ISODateTime | null;
+  due_is_approximate: boolean;
+  points_possible: number | null;
+}
+
+export interface QuizCoverage {
+  quiz_id: string;
+  topic_id: string;
+}
+
 export interface LatePolicy {
   accepted?: boolean;
   window_hours?: number | null;
@@ -184,6 +201,30 @@ export interface Card {
   cloze_text: string | null;
   origin: 'generated' | 'manual';
   status: CardStatus;
+  source_note_id: string | null;
+  source_span_start: number | null;
+  source_span_end: number | null;
+  created_at: ISODateTime;
+}
+
+export type QuestionType = 'short_answer' | 'essay' | 'multiple_choice' | 'fill_blank' | 'true_false';
+export type QuestionStatus = 'pending' | 'accepted' | 'rejected' | 'edited';
+
+export interface Question {
+  id: string;
+  user_id: string;
+  course_id: string;
+  topic_id: string | null;
+  quiz_id: string | null;
+  concept: string;
+  question_type: QuestionType;
+  question_text: string;
+  answer_text: string | null;
+  answer_options: string[] | null; // for multiple choice
+  context: string | null;
+  difficulty: 'easy' | 'medium' | 'hard';
+  origin: 'generated' | 'manual';
+  status: QuestionStatus;
   source_note_id: string | null;
   source_span_start: number | null;
   source_span_end: number | null;
@@ -256,12 +297,15 @@ export interface Tables {
   assignments: Assignment;
   exams: Exam;
   exam_coverage: ExamCoverage;
+  quizzes: Quiz;
+  quiz_coverage: QuizCoverage;
   course_policies: CoursePolicy;
   absences: Absence;
   topics: Topic;
   notes: Note;
   cards: Card;
   card_reviews: CardReview;
+  questions: Question;
   generation_events: GenerationEvent;
   waiting_on: WaitingOn;
   metric_events: MetricEvent;

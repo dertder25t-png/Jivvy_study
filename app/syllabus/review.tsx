@@ -148,6 +148,41 @@ export default function ReviewParse() {
         </Section>
       ) : null}
 
+      {n.quizzes.length > 0 ? (
+        <Section title={`Quizzes (${n.quizzes.length})`}>
+          <Card>
+            {n.quizzes.map((q, i) => (
+              <View key={i}>
+                {i > 0 ? <Divider /> : null}
+                <Row style={{ paddingVertical: 4 }}>
+                  <View style={{ flex: 1 }}>
+                    <Field
+                      value={q.title}
+                      onChangeText={(v) => patch((d) => ({ ...d, quizzes: d.quizzes.map((x, xi) => (xi === i ? { ...x, title: v } : x)) }))}
+                      onBlur={() => bump('quiz_title')}
+                    />
+                    <T variant="small" muted>
+                      {q.type ? `${q.type} · ` : ''}{q.frequency || 'one-time'}{q.points_possible ? ` · ${q.points_possible} pts` : ''}
+                    </T>
+                  </View>
+                  <DateField
+                    value={ymdOf(q.due_at)}
+                    placeholder="YYYY-MM-DD"
+                    onCommit={(v) => {
+                      const iso = setDate(q.due_at, v);
+                      if (iso !== q.due_at) {
+                        patch((d) => ({ ...d, quizzes: d.quizzes.map((x, xi) => (xi === i ? { ...x, due_at: iso, due_is_approximate: false } : x)) }));
+                        bump('quiz_date');
+                      }
+                    }}
+                  />
+                </Row>
+              </View>
+            ))}
+          </Card>
+        </Section>
+      ) : null}
+
       <Section title={`Assignments (${n.assignments.filter((a) => a.type !== 'exam').length})`}>
         <Card>
           {shown.map((a, i) => {

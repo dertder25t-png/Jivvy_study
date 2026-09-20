@@ -124,6 +124,8 @@ export default function RootLayout() {
         <Stack.Screen name="cards/review" options={{ title: 'Review' }} />
         <Stack.Screen name="cards/new" options={{ title: 'Add cards' }} />
         <Stack.Screen name="cards/deck" options={{ title: 'Your cards' }} />
+        <Stack.Screen name="tests/generate" options={{ title: 'Generate practice questions' }} />
+        <Stack.Screen name="tests/review" options={{ title: 'Review questions' }} />
         <Stack.Screen name="crunch" options={{ title: 'Crunch forecast' }} />
         <Stack.Screen name="email" options={{ title: 'Email a professor' }} />
         <Stack.Screen name="waiting" options={{ title: 'Waiting on' }} />

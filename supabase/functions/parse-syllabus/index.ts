@@ -21,11 +21,13 @@ Rules:
 - If an item says only a week ("due Week 6") with no calendar date, set due_date null, due_week to that number, and due_is_approximate true. Never guess a date.
 - Recurring items ("Quizzes every Friday", "Weekly discussion posts") should be expanded into individual assignments for each occurrence when the dates can be derived from the schedule; otherwise list none and rely on the grade component's expected_count.
 - Exams (midterms, finals, in-class tests) go ONLY in "exams", never in "assignments". Set is_cumulative for cumulative finals. Fill covers_weeks / covers_topics when the syllabus says what an exam covers ("Chapters 1-4", "Weeks 1-6").
+- Quizzes (pop quizzes, chapter quizzes, online quizzes) go in "quizzes", not "assignments". Include frequency ("weekly", "as needed", null), type (online, paper, in_class, other), due dates, and topic coverage if stated.
 - grade_components: weight is a fraction of 1 (25% -> 0.25). expected_count is how many items make up the component when stated. drop_lowest is how many lowest scores are dropped (0 if none).
-- assignment.component_name must exactly match one grade_components name when the syllabus makes the link, else null.
-- assignment.type is one of: reading, paper, quiz, discussion, project, exam, other.
+- assignment.component_name / quiz.component_name must exactly match one grade_components name when the syllabus makes the link, else null.
+- assignment.type is one of: reading, paper, quiz, discussion, project, exam, other. Do NOT include quizzes in assignments — use the quizzes array instead.
 - estimated_minutes: only if the syllabus states a time estimate; otherwise null.
 - topics: the weekly schedule, one entry per week (or per stated topic block), with week_no, starts_on if a date is given, a concise title, and readings if listed.
+- test_info: extract test formats mentioned (multiple choice, essay, short answer, true/false, etc), any preparation notes or study tips, and retake/makeup policy if stated.
 - policies.late: accepted true/false/null, window_hours (a late window such as "up to 48 hours"), penalty_per_day as a fraction (10% per day -> 0.1). Put unusual terms in notes. policies.attendance: allowed_absences and the stated penalty. policies.notes: extension offers, drop rules and other freebies worth remembering.
 - meetings: class days (Mon..Sun), start/end, location.
 - Instructor name and email if present.
@@ -94,8 +96,8 @@ Deno.serve(async (req) => {
     });
 
     const parsed = coerceParsed(result.data);
-    if (parsed.assignments.length + parsed.exams.length + parsed.topics.length === 0) {
-      throw new HttpError(422, "We couldn't find deadlines, exams or a weekly schedule in that document.");
+    if (parsed.assignments.length + parsed.exams.length + parsed.quizzes.length + parsed.topics.length === 0) {
+      throw new HttpError(422, "We couldn't find deadlines, exams, quizzes or a weekly schedule in that document.");
     }
 
     await cachePut(ctx, 'syllabus', hash, version, parsed);

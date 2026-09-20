@@ -1,7 +1,7 @@
 // Every user-facing mutation lives here so screens stay declarative and the
 // spine of the app (syllabus → topics → notes → cards → review) is wired in one place.
 import type {
-  Absence, Assignment, Card, CardReview, Course, CoursePolicy, Exam, ExamCoverage, GradeBand, GradeComponent,
+  Absence, Assignment, Card, CardReview, Course, CoursePolicy, Exam, ExamCoverage, Quiz, QuizCoverage, GradeBand, GradeComponent,
   GenerationEvent, Note, Rating, Term, Topic, WaitingOn,
 } from '@/types/db';
 import type { NormalizedSyllabus } from '@/core/syllabus/normalize';
@@ -112,6 +112,20 @@ export function commitSyllabus(input: CommitInput): Course {
   store.insertMany('exams', exams);
   store.insertMany('exam_coverage', coverage);
 
+  const quizzes: Quiz[] = [];
+  const quizCoverage: QuizCoverage[] = [];
+  for (const q of n.quizzes) {
+    const id = newId();
+    quizzes.push({
+      id, course_id: course.id, assignment_id: null,
+      title: q.title, type: q.type, frequency: q.frequency, due_at: q.due_at,
+      due_is_approximate: q.due_is_approximate, points_possible: q.points_possible, created_at: created,
+    });
+    for (const ti of q.topic_indexes) if (topicIds[ti]) quizCoverage.push({ quiz_id: id, topic_id: topicIds[ti] });
+  }
+  store.insertMany('quizzes', quizzes);
+  store.insertMany('quiz_coverage', quizCoverage);
+
   const policy: CoursePolicy = {
     course_id: course.id, late_policy: n.late_policy, attendance_policy: n.attendance_policy, notes: n.policy_notes,
   };
@@ -126,7 +140,7 @@ export function commitSyllabus(input: CommitInput): Course {
 
   logMetric('syllabus_committed', {
     cache_hit: input.cacheHit, edits: input.edits,
-    assignments: assignments.length, exams: exams.length, topics: topics.length,
+    assignments: assignments.length, exams: exams.length, quizzes: quizzes.length, topics: topics.length,
     warnings: n.issues.filter((i) => i.severity === 'warn').length,
   });
   return course;
