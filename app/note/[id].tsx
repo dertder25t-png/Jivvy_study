@@ -13,6 +13,8 @@ import { store } from '@/data/store';
 import { Button, Chip, Empty, Row, Screen, T } from '@/ui/components';
 import { BODY_LINE, BODY_SIZE, Markdown } from '@/ui/Markdown';
 import { NoteCardsPanel, PANEL_WIDTH } from '@/ui/NoteCardsPanel';
+import { NoteToolbar } from '@/ui/NoteToolbar';
+import { NotePreview } from '@/ui/NotePreview';
 import { space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 import { useSafeBack } from '@/ui/nav';
@@ -82,10 +84,25 @@ export default function NoteEditor() {
   const [body, setBody] = useState(existing?.body ?? '');
   const [mode, setMode] = useState<'write' | 'read'>(isNew || !existing?.body.trim() ? 'write' : 'read');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showPreview, setShowPreview] = useState(!wide); // on mobile, start with editor only
   const latest = useRef({ title, body });
   latest.current = { title, body };
   const bodyRef = useRef<TextInput>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Helper to insert markdown (inserts before selection or at end)
+  const insertMarkdown = (before: string, after: string = '') => {
+    // For MVP: insert at the end of the text
+    // On web, we could use cursor position from the textarea
+    // On native, this is simpler
+    const newBody = body + (body.trim() && !body.endsWith('\n') ? '\n' : '') + before + after;
+    setBody(newBody);
+
+    // Focus back on the input
+    setTimeout(() => {
+      bodyRef.current?.focus();
+    }, 50);
+  };
 
   // ---------------------------------------------------------------- saving
   const findNote = (): Note | null => {
@@ -218,6 +235,9 @@ export default function NoteEditor() {
         <Pressable onPress={() => setMenuOpen((v) => !v)} style={{ flex: 1, minWidth: 0, overflow: 'hidden', alignItems: 'center', paddingHorizontal: 6 }} accessibilityRole="button" accessibilityLabel="Where this note is filed">
           <T variant="small" muted numberOfLines={1} ellipsizeMode="head" style={{ maxWidth: '100%' }}>{crumb}</T>
         </Pressable>
+        {mode === 'write' && !wide ? (
+          <IconBtn icon={showPreview ? 'create-outline' : 'eye-outline'} label={showPreview ? 'Editor' : 'Preview'} onPress={() => setShowPreview((v) => !v)} active={showPreview} />
+        ) : null}
         <IconBtn icon={mode === 'write' ? 'book-outline' : 'create-outline'} label={mode === 'write' ? 'Reading view' : 'Edit'} onPress={toggleMode} />
         <IconBtn icon="ellipsis-vertical" label="More" onPress={() => setMenuOpen((v) => !v)} active={menuOpen} />
       </View>
@@ -242,35 +262,61 @@ export default function NoteEditor() {
       ) : null}
 
       {/* the page */}
-      <View style={{ flex: 1, alignItems: 'center' }}>
+      <View style={{ flex: 1 }}>
         {mode === 'write' ? (
-          <View style={column}>
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              placeholder="Untitled"
-              placeholderTextColor={c.muted}
-              returnKeyType="next"
-              blurOnSubmit={false}
-              onSubmitEditing={() => bodyRef.current?.focus()}
-              style={{
-                color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
-                borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
-              }}
-            />
-            <TextInput
-              ref={bodyRef}
-              value={body}
-              onChangeText={setBody}
-              multiline
-              autoFocus={isNew}
-              placeholder="Start writing…"
-              placeholderTextColor={c.muted}
-              style={{
-                flex: 1, color: c.text, fontSize: BODY_SIZE, lineHeight: BODY_LINE, textAlignVertical: 'top',
-                paddingTop: 4, paddingBottom: 90, paddingHorizontal: 0, borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
-              }}
-            />
+          <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column' }}>
+            {/* Editor column (left on desktop, full width on mobile unless showing preview) */}
+            {(!showPreview || wide) && (
+              <View style={{
+                flex: wide ? 1 : 1,
+                backgroundColor: c.bg,
+              }}>
+                {/* Toolbar */}
+                <NoteToolbar onInsertMarkdown={insertMarkdown} />
+
+                {/* Editor */}
+                <View style={{ flex: 1, alignItems: 'center' }}>
+                  <View style={column}>
+                    <TextInput
+                      value={title}
+                      onChangeText={setTitle}
+                      placeholder="Untitled"
+                      placeholderTextColor={c.muted}
+                      returnKeyType="next"
+                      blurOnSubmit={false}
+                      onSubmitEditing={() => bodyRef.current?.focus()}
+                      style={{
+                        color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
+                        borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
+                      }}
+                    />
+                    <TextInput
+                      ref={bodyRef}
+                      value={body}
+                      onChangeText={setBody}
+                      multiline
+                      autoFocus={isNew}
+                      placeholder="Start writing…"
+                      placeholderTextColor={c.muted}
+                      style={{
+                        flex: 1, color: c.text, fontSize: BODY_SIZE, lineHeight: BODY_LINE, textAlignVertical: 'top',
+                        paddingTop: 4, paddingBottom: 90, paddingHorizontal: 0, borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
+                      }}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Preview pane (right on desktop, toggle on mobile) */}
+            {(wide || showPreview) && (
+              <View style={{
+                flex: 1,
+                backgroundColor: c.bg,
+              }}>
+                <NotePreview markdown={body} />
+              </View>
+            )}
           </View>
         ) : (
           <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 120, flexGrow: 1 }}>

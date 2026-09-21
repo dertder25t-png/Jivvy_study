@@ -3,22 +3,51 @@ import { Linking, Platform, ScrollView, StyleSheet, Text, View, type TextStyle }
 import { parseBlocks, type Block, type Inline, type ListItem } from '@/core/markdown';
 import { useColors, type Colors } from './theme';
 
-const HEADING_SIZE = [0, 32, 26, 22, 19, 17, 16];
+const HEADING_SIZE = [0, 38, 32, 26, 22, 19, 17];
 const MONO = Platform.select({ ios: 'Menlo', android: 'monospace', default: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' });
 
 export const BODY_SIZE = 17;
 export const BODY_LINE = 28;
 
-function calloutColors(kind: string, c: Colors): { bg: string; fg: string; icon: string } {
+// Obsidian-like colors for callouts
+const CALLOUT_ICONS: Record<string, string> = {
+  'note': '📝',
+  'abstract': '📋',
+  'summary': '📋',
+  'tldr': '📋',
+  'info': '💡',
+  'todo': '✓',
+  'tip': '✓',
+  'success': '✓',
+  'check': '✓',
+  'done': '✓',
+  'question': '❓',
+  'help': '❓',
+  'faq': '❓',
+  'warning': '⚠️',
+  'caution': '⚠️',
+  'attention': '⚠️',
+  'failure': '❌',
+  'fail': '❌',
+  'missing': '❌',
+  'danger': '❌',
+  'error': '❌',
+  'bug': '🐛',
+  'example': '📌',
+  'quote': '💬',
+  'cite': '💬',
+};
+
+function calloutColors(kind: string, c: Colors): { bg: string; fg: string; icon: string; borderColor: string } {
   switch (kind) {
     case 'tip': case 'success': case 'check': case 'done':
-      return { bg: c.goodSoft, fg: c.good, icon: '✓' };
+      return { bg: c.goodSoft, fg: c.good, icon: CALLOUT_ICONS[kind] || '✓', borderColor: c.good };
     case 'warning': case 'caution': case 'attention': case 'danger': case 'error': case 'bug': case 'important':
-      return { bg: c.warnSoft, fg: c.warn, icon: '!' };
+      return { bg: c.warnSoft, fg: c.warn, icon: CALLOUT_ICONS[kind] || '⚠️', borderColor: c.warn };
     case 'quote': case 'cite':
-      return { bg: c.surfaceAlt, fg: c.muted, icon: '“' };
+      return { bg: c.surfaceAlt, fg: c.muted, icon: CALLOUT_ICONS[kind] || '💬', borderColor: c.muted };
     default: // note, info, abstract, todo, example, question…
-      return { bg: c.primarySoft, fg: c.primary, icon: '✎' };
+      return { bg: c.primarySoft, fg: c.primary, icon: CALLOUT_ICONS[kind] || '📝', borderColor: c.primary };
   }
 }
 
@@ -81,42 +110,112 @@ function BlockView({ b }: { b: Block }) {
   switch (b.t) {
     case 'heading': {
       const size = HEADING_SIZE[b.level] ?? 16;
+      const isSmallHeading = b.level >= 4;
       return (
-        <Text
-          selectable
-          style={{
-            color: b.level >= 5 ? c.muted : c.text, fontSize: size, lineHeight: size * 1.3, fontWeight: '700',
-            marginTop: b.level <= 2 ? 10 : 4, letterSpacing: b.level === 1 ? -0.5 : 0,
-          }}
-        >
-          <InlineText nodes={b.inline} base={{ fontSize: size }} />
-        </Text>
+        <View>
+          <Text
+            selectable
+            style={{
+              color: b.level >= 5 ? c.muted : c.text,
+              fontSize: size,
+              lineHeight: size * 1.4,
+              fontWeight: b.level === 1 ? '800' : '700',
+              marginTop: b.level <= 2 ? 16 : b.level === 3 ? 12 : 8,
+              marginBottom: b.level <= 2 ? 8 : 4,
+              letterSpacing: b.level === 1 ? -0.5 : 0,
+            }}
+          >
+            <InlineText nodes={b.inline} base={{ fontSize: size }} />
+          </Text>
+          {b.level === 1 || b.level === 2 ? (
+            <View style={{ height: b.level === 1 ? 2 : 1, backgroundColor: c.border, marginTop: 4, marginBottom: 8 }} />
+          ) : null}
+        </View>
       );
     }
     case 'para':
       return (
-        <Text selectable style={{ color: c.text, fontSize: BODY_SIZE, lineHeight: BODY_LINE }}>
+        <Text selectable style={{ color: c.text, fontSize: BODY_SIZE, lineHeight: BODY_LINE, marginVertical: 2 }}>
           <InlineText nodes={b.inline} />
         </Text>
       );
     case 'hr':
-      return <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: c.border, marginVertical: 12 }} />;
-    case 'code':
+      return <View style={{ height: 1, backgroundColor: c.border, marginVertical: 16 }} />;
+    case 'code': {
+      const lines = b.text.split('\n');
+      const lang = b.lang || 'code';
       return (
-        <ScrollView horizontal style={{ backgroundColor: c.surfaceAlt, borderRadius: 8 }} contentContainerStyle={{ padding: 12 }}>
-          <Text selectable style={{ fontFamily: MONO, fontSize: 14, lineHeight: 20, color: c.text }}>{b.text}</Text>
-        </ScrollView>
+        <View style={{ marginVertical: 8 }}>
+          {b.lang ? (
+            <View style={{ backgroundColor: c.surfaceAlt, paddingHorizontal: 12, paddingVertical: 6, borderTopLeftRadius: 8, borderTopRightRadius: 8 }}>
+              <Text style={{ fontSize: 12, color: c.muted, fontFamily: MONO }}>{lang}</Text>
+            </View>
+          ) : null}
+          <ScrollView
+            horizontal
+            style={{
+              backgroundColor: c.surfaceAlt,
+              borderBottomLeftRadius: 8,
+              borderBottomRightRadius: 8,
+            }}
+            contentContainerStyle={{ padding: 12 }}
+          >
+            <View>
+              {lines.map((line, i) => (
+                <View key={i} style={{ flexDirection: 'row', gap: 12 }}>
+                  <Text style={{
+                    fontSize: 12,
+                    color: c.muted,
+                    fontFamily: MONO,
+                    width: 30,
+                    textAlign: 'right',
+                  }}>
+                    {i + 1}
+                  </Text>
+                  <Text
+                    selectable
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 14,
+                      lineHeight: 20,
+                      color: c.text,
+                      minWidth: 200,
+                    }}
+                  >
+                    {line || ' '}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        </View>
       );
+    }
     case 'quote':
       return (
-        <View style={{ borderLeftWidth: 3, borderLeftColor: c.border, paddingLeft: 14, gap: 8 }}>
+        <View style={{
+          borderLeftWidth: 4,
+          borderLeftColor: c.muted,
+          paddingLeft: 16,
+          paddingVertical: 8,
+          gap: 8,
+          opacity: 0.8,
+        }}>
           {b.blocks.map((x, i) => <BlockView key={i} b={x} />)}
         </View>
       );
     case 'callout': {
       const k = calloutColors(b.kind, c);
       return (
-        <View style={{ backgroundColor: k.bg, borderRadius: 10, padding: 16, gap: 10 }}>
+        <View style={{
+          backgroundColor: k.bg,
+          borderLeftWidth: 4,
+          borderLeftColor: k.borderColor,
+          borderRadius: 6,
+          padding: 16,
+          gap: 10,
+          marginVertical: 4,
+        }}>
           <Text selectable style={{ color: k.fg, fontSize: BODY_SIZE, fontWeight: '600', lineHeight: BODY_LINE }}>
             {k.icon}  <InlineText nodes={b.title} />
           </Text>
@@ -128,13 +227,37 @@ function BlockView({ b }: { b: Block }) {
       return <ListView items={b.items} />;
     case 'table':
       return (
-        <ScrollView horizontal>
-          <View style={{ borderWidth: StyleSheet.hairlineWidth, borderColor: c.border, borderRadius: 8, overflow: 'hidden' }}>
+        <ScrollView horizontal style={{ marginVertical: 8 }}>
+          <View style={{ borderWidth: 1, borderColor: c.border, borderRadius: 8, overflow: 'hidden' }}>
             {[b.header, ...b.rows].map((row, ri) => (
-              <View key={ri} style={{ flexDirection: 'row', backgroundColor: ri === 0 ? c.surfaceAlt : 'transparent' }}>
+              <View
+                key={ri}
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: ri === 0 ? c.surfaceAlt : ri % 2 === 1 ? c.bg : c.surface,
+                }}
+              >
                 {row.map((cell, ci) => (
-                  <View key={ci} style={{ minWidth: 110, padding: 10, borderRightWidth: StyleSheet.hairlineWidth, borderTopWidth: ri ? StyleSheet.hairlineWidth : 0, borderColor: c.border }}>
-                    <Text selectable style={{ color: c.text, fontSize: 15, fontWeight: ri === 0 ? '700' : '400' }}>
+                  <View
+                    key={ci}
+                    style={{
+                      minWidth: 120,
+                      paddingVertical: 12,
+                      paddingHorizontal: 14,
+                      borderRightWidth: ci < row.length - 1 ? StyleSheet.hairlineWidth : 0,
+                      borderBottomWidth: ri < b.rows.length ? StyleSheet.hairlineWidth : 0,
+                      borderColor: c.border,
+                    }}
+                  >
+                    <Text
+                      selectable
+                      style={{
+                        color: c.text,
+                        fontSize: 14,
+                        fontWeight: ri === 0 ? '700' : '500',
+                        lineHeight: 20,
+                      }}
+                    >
                       <InlineText nodes={cell} />
                     </Text>
                   </View>

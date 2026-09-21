@@ -28,7 +28,10 @@ export default function Notes() {
 
   return (
     <Screen>
-      <Button title="New note" onPress={() => router.push('/note/new')} />
+      <Row gap={8}>
+        <Button title="New note" onPress={() => router.push('/note/new')} style={{ flex: 1 }} />
+        <Button title="Import" variant="ghost" onPress={() => router.push('/import')} style={{ flex: 1 }} />
+      </Row>
 
       {inbox.length > 0 ? (
         <Section
