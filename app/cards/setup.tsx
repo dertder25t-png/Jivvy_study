@@ -11,8 +11,8 @@ type StudyMode = 'learn' | 'review';
 
 const MINUTE_CHOICES = [5, 10, 15, 30];
 const ORDERS: Array<{ key: StudyOrder; label: string; hint: string }> = [
-  { key: 'smart', label: 'Smart', hint: 'What's due first, then your weakest cards.' },
-  { key: 'weakest', label: 'Weakest first', hint: 'Ignores the schedule - the cards you know least.' },
+  { key: 'smart', label: 'Smart', hint: "What's due first, then your weakest cards." },
+  { key: 'weakest', label: 'Weakest first', hint: "Ignores the schedule - the cards you know least." },
   { key: 'shuffle', label: 'Shuffle', hint: 'Random order, good for a final run-through.' },
 ];
 
@@ -181,7 +181,7 @@ export default function StudySetup() {
             <T variant="body" style={{ fontWeight: '600' }}>Count this toward my schedule</T>
             <T variant="small" muted>
               {counts
-                ? 'Your ratings help plan future reviews. Studying early is safe - it never pushes a card's next review further away.'
+                ? "Your ratings help plan future reviews. Studying early is safe - it never pushes a card's next review further away."
                 : 'Practice only: nothing you do here changes your review schedule.'}
             </T>
           </View>
