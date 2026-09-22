@@ -5,7 +5,7 @@
 > policies, topic schedule, exam coverage. Notes file themselves, flashcards come from those notes,
 > and review is scheduled backward from the exam date.
 
-Built from `study-app-build-spec.md` (v1). React Native + Expo (SDK 57) · Supabase · one LLM behind one file.
+Built from `study-app-build-spec.md` (v1). React Native + Expo (SDK 57) · Supabase · no AI: every step is deterministic code.
 
 > **New here? Read [SETUP.md](SETUP.md)** — plain-language steps to run the app, turn on accounts, and put it on your phone.
 
@@ -30,18 +30,14 @@ capture a note with **+**, open a note → **Make flashcards**, the **Crunch for
    private `syllabi` storage bucket.
 2. In Supabase → Authentication → Providers, enable **Email** (the app uses one-time codes, no passwords).
    Make sure the email template includes the `{{ .Token }}` code.
-3. Deploy the two edge functions and set the LLM key:
+3. Deploy the edge functions (no API keys needed):
    ```bash
    supabase functions deploy parse-syllabus
-   supabase functions deploy rewrite-cards
-   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+   supabase functions deploy delete-account
    ```
 4. `cp .env.example .env` and fill `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
    (the **anon** key only — the service-role key never goes in the app).
 
-Optional function env vars: `LLM_MODEL_PARSE` (default `claude-sonnet-5`), `LLM_MODEL_CARDS`
-(default `claude-haiku-4-5`), `LLM_PARSE_EFFORT` (default `medium`; set empty if you point parse at Haiku),
-`DAILY_NOTE_GEN_CAP` (default 25), `CARD_CACHE=off` (see Privacy below).
 
 ## How the spec maps to the code
 
@@ -55,9 +51,8 @@ Optional function env vars: `LLM_MODEL_PARSE` (default `claude-sonnet-5`), `LLM_
 | §5.4 quick capture | `app/capture.tsx` + the **+** button on every tab |
 | §5.5 comeback | `src/core/triage.ts`, `app/comeback.tsx` (shown automatically after ≥4 days away) |
 | §5.6 notifications | `src/core/notifications.ts` (≤3/day cap, ranked by grade impact, allowed types only), `src/notifications/schedule.ts` |
-| §6 flashcard pipeline | Stage 1 `src/core/flashcards/extract.ts` · Stage 2 `supabase/functions/rewrite-cards` · Stage 3 `reject.ts` · Stage 4 `app/cards/generate.tsx` · glue `pipeline.ts` |
+| §6 flashcard pipeline | Stage 1 `src/core/flashcards/extract.ts` · Stage 2 `rewrite.ts` (rule-based, on the device) · Stage 3 `reject.ts` · Stage 4 `app/cards/generate.tsx` · glue `pipeline.ts` |
 | §6.7 exam-aware scheduling | `src/core/scheduling.ts` (`nextReview` compresses to land before the exam) |
-| §3 "swap providers in one file" | `supabase/functions/_shared/llm.ts` — the only file that imports a provider SDK |
 | §9 metrics | `metric_events` table (parse edits, cache hits, comeback shown, auto-rejections) + `generation_events` |
 
 Design rules are enforced in code, not just copy: relative time everywhere (`src/core/time.ts`), no
@@ -128,16 +123,16 @@ the app so only Stage 2 (formatting) ever costs money.
 ## Tests
 
 ```bash
-npm test           # 125 tests over src/core (vitest)
+npm test           # tests over src/core (vitest)
 npm run typecheck
 ```
 
 Covered: study-session building, time guidance and early-review scheduling, grading scales and official-grade reconciliation, the markdown reader, relative-time/timezone/DST math, grade math and drop-lowest, late windows, crunch forecast,
 comeback triage, SM-2 with exam compression, study plan, notification budget, note routing,
 syllabus normalization (year fixing, week→date, coverage inference), the whole flashcard pipeline
-(extract patterns, every rejection rule, contrast-pair regression), and the LLM JSON-schema contracts.
+(extract patterns, the rule-based rewrite, every rejection rule, contrast-pair regression).
 
-**Not covered by tests:** the Deno edge functions (they need Supabase + an API key) and the React
+**Not covered by tests:** the Deno edge functions (they need a Supabase project) and the React
 screens beyond a manual smoke test. See "Verified vs. not" below.
 
 ## Verified vs. not
@@ -146,8 +141,8 @@ Verified here: unit tests, `tsc --strict`, production Hermes bundles for **iOS a
 (`expo export`), and the demo flow driven in a browser (load semester → home, crunch, comeback, course
 grades, note → 9 candidates → cards → approve → review session).
 
-**Not verified — needs you:** anything touching a live Supabase project or Anthropic key (syllabus parse,
-card rewrite, auth, sync, cache), push notifications on a real device, the photo/camera/document
+**Not verified — needs you:** anything touching a live Supabase project (syllabus parse,
+auth, sync, cache), push notifications on a real device, the photo/camera/document
 pickers on a device, and swipe gestures on touch (buttons work everywhere; swipe was only coded), and the note screen's on-device keyboard behaviour (verified in a browser at desktop and phone widths).
 
 ## Deliberately not built (spec §2 and where v1 stops)
@@ -159,8 +154,8 @@ Also not in this first pass, and worth knowing:
 - **Home-screen widget, share sheet, and voice capture (§5.4).** These need native modules and a
   development build (`expo-dev-client`), not Expo Go. In-app capture is instant and your keyboard's mic
   button gives voice-to-text for free; the router is ready for `captured_via: 'widget' | 'share' | 'voice'`.
-- **OCR-before-vision (§5.1).** There's no OCR engine in the edge runtime, so scanned PDFs and photos go
-  straight to the vision-capable model. A hosted OCR step can slot into `_shared/extract.ts`.
+- **Scanned PDFs and photos (§5.1).** There's no OCR engine in the edge runtime, so files without a text
+  layer can't be read; the student is asked to paste the text. A hosted OCR step can slot into `_shared/extract.ts`.
 - **Free-tier limits / billing (§8).** `users.plan` exists; nothing enforces 1–2 courses yet.
 - **Onboarding tour and offline UX polish (Phase 6).** Empty states exist; there's no guided tour.
 - **App icon / splash / store setup.** Bundle ID is the placeholder `com.example.studyapp`.
@@ -168,9 +163,9 @@ Also not in this first pass, and worth knowing:
 ## Decisions I made where the spec left a choice (§12)
 
 1. **Name / bundle ID** — placeholder "Study App", `com.example.studyapp`. Change in `app.json`.
-2. **Models** — syllabus parse: `claude-sonnet-5` (highest-leverage step, cached across students, so the
-   stronger model is cheap per user); card rewrite: `claude-haiku-4-5` (narrow formatting job). Both are
-   env vars behind `_shared/llm.ts`. Check current pricing before launch.
+2. **No AI** — syllabus parsing (`_shared/heuristic-parse.ts`) and card rewriting
+   (`src/core/flashcards/rewrite.ts`) are both rule-based, so there's no model cost, no API key, and no
+   note text leaves the device to make flashcards. Everything is reviewed by the student before saving.
 3. **Cloze** — yes. `{{c1::answer}}` syntax; validated in Stage 3 (`invalid_cloze`).
 4. **Class meeting times** — extracted from the syllabus into `courses.meetings` (a column I added), used
    for schedule-based note filing.
@@ -180,12 +175,10 @@ Also not in this first pass, and worth knowing:
 Schema additions beyond §4: `users.plan`, `courses.meetings`, `metric_events`, and `content_cache` is
 keyed on (hash, kind, parse_version, school) so a version bump or another school never collides.
 
-## Privacy note worth a decision
+## Privacy
 
-Spec §6.5 wants card rewrites cached by content hash; §10 says the shared cache must never hold user
-notes. I reconciled them by caching only the *rewritten card text for a single definitional passage*,
-keyed by a hash and scoped to the school — never the note. If you'd rather not cache anything derived
-from notes, set `CARD_CACHE=off` on `rewrite-cards`. Syllabus caching stores document structure only.
+Flashcards are made entirely on the device, so note text is never sent to a server to make them. The
+shared cache holds parsed syllabus structure only (spec §10).
 
 ## Project layout
 
@@ -193,8 +186,8 @@ from notes, set `CARD_CACHE=off` on `rewrite-cards`. Syllabus caching stores doc
 app/                 expo-router screens (tabs: Coming · Courses · Notes · Study · More)
 src/core/            pure logic + tests — the rules
 src/data/            store, backends (local / supabase), actions, derived state
-src/api/             edge-function client (+ offline fallback for card rewrite)
+src/api/             edge-function client (syllabus parsing)
 src/ui/              theme + small component kit
 supabase/migrations  schema + RLS
-supabase/functions   parse-syllabus, rewrite-cards, _shared (llm, schemas, extract, cache)
+supabase/functions   parse-syllabus, delete-account, _shared (heuristic parser, schema, extract, cache)
 ```

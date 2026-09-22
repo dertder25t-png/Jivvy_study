@@ -5,9 +5,8 @@
 //
 // Privacy: never log document content. Only ids, sizes and statuses.
 // Cost: zero — uses regex & keyword matching, not AI.
-import { authenticate, base64, cacheGet, cachePut, corsHeaders, HttpError, json, sha256, sha256Bytes } from '../_shared/common.ts';
+import { authenticate, cacheGet, cachePut, corsHeaders, HttpError, json, sha256, sha256Bytes } from '../_shared/common.ts';
 import { extract } from '../_shared/extract.ts';
-import type { LlmContent } from '../_shared/llm.ts';
 import { coerceParsed, SYLLABUS_PARSE_VERSION, type ParsedSyllabus } from '../_shared/syllabus-schema.ts';
 import { parseHeuristic } from '../_shared/heuristic-parse.ts';
 
@@ -23,9 +22,8 @@ Deno.serve(async (req) => {
     const term = body.term as { name: string; starts_on: string; ends_on: string } | undefined;
     if (!term?.starts_on || !term?.ends_on) throw new HttpError(400, 'term is required');
 
-    // ---- 1. get text (or bytes for the vision path) ----
+    // ---- 1. get text ----
     let text: string | null = null;
-    let visual: LlmContent | null = null;
     let hash = '';
 
     if (typeof body.text === 'string') {
@@ -40,9 +38,7 @@ Deno.serve(async (req) => {
 
       const ex = await extract(bytes, String(body.mime ?? data.type ?? ''), path);
       if (ex.kind === 'text') text = ex.text;
-      else if (ex.kind === 'image') visual = { type: 'image', mediaType: ex.mediaType, base64: base64(bytes) };
-      else visual = { type: 'pdf', base64: base64(bytes) };
-      if (visual) hash = await sha256Bytes(bytes);
+      else hash = await sha256Bytes(bytes); // image or scanned PDF: no text layer to read
     } else {
       throw new HttpError(400, 'Provide text or storage_path');
     }
@@ -62,7 +58,7 @@ Deno.serve(async (req) => {
 
     // ---- 3. heuristic parse (no AI, no cost) ----
     if (text == null) {
-      throw new HttpError(422, "Heuristic parsing requires text. PDF/image parsing not supported (consider converting to text first).");
+      throw new HttpError(422, "We couldn't find any text in that file — it may be a scan or a photo. Paste the syllabus text instead.");
     }
 
     const parsed = coerceParsed(parseHeuristic({

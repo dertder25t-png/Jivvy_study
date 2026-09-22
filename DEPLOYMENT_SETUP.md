@@ -52,23 +52,13 @@
 The app is **fully functional**:
 
 - ✅ Notes (create, edit, markdown)
-- ✅ Flashcards (local extraction + heuristic rewriting)
+- ✅ Flashcards (rule-based, made on the device — no AI)
 - ✅ Study scheduling
 - ✅ Grade calculations
 - ✅ Course planning
 - ✅ Sign in/accounts
 - ✅ Data sync to Supabase
 - ✅ **Syllabus parsing** (new: heuristic, not AI)
-
-## If You Want AI-Enhanced Parsing Later
-
-Optional: Add Claude for smarter parsing & card rewriting:
-
-```bash
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Then modify `supabase/functions/parse-syllabus/index.ts` to use `getLlm()` instead of `parseHeuristic()`. But the heuristic version works great as-is.
 
 ## Testing the Setup
 

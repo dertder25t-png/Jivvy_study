@@ -1,44 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CARDS_JSON_SCHEMA, PROMPT_VERSION, REWRITE_SYSTEM_PROMPT } from '../../supabase/functions/_shared/cards-schema';
-import { SYLLABUS_JSON_SCHEMA, coerceParsed } from '../../supabase/functions/_shared/syllabus-schema';
+import { coerceParsed } from '../../supabase/functions/_shared/syllabus-schema';
 import { courseBuffers } from './policies';
 import { mkAssignment, mkComponent, mkCourse } from './testutil';
-
-type Json = Record<string, unknown>;
-
-/** Walks a JSON Schema and collects violations of the structured-outputs subset. */
-function violations(node: unknown, path = '$'): string[] {
-  const out: string[] = [];
-  if (!node || typeof node !== 'object') return out;
-  const n = node as Json;
-  for (const banned of ['minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'multipleOf', 'pattern']) {
-    if (banned in n) out.push(`${path}: unsupported keyword "${banned}"`);
-  }
-  if (n.type === 'object' || n.properties) {
-    if (n.additionalProperties !== false) out.push(`${path}: object must set additionalProperties:false`);
-    const props = Object.keys((n.properties as Json) ?? {});
-    const req = ((n.required as string[]) ?? []).slice().sort();
-    if (JSON.stringify(props.slice().sort()) !== JSON.stringify(req)) out.push(`${path}: every property must be required`);
-    for (const [k, v] of Object.entries((n.properties as Json) ?? {})) out.push(...violations(v, `${path}.${k}`));
-  }
-  if (n.items) out.push(...violations(n.items, `${path}[]`));
-  return out;
-}
-
-describe('LLM output contracts', () => {
-  it('syllabus schema follows the structured-outputs rules', () => {
-    expect(violations(SYLLABUS_JSON_SCHEMA)).toEqual([]);
-  });
-  it('cards schema follows the structured-outputs rules', () => {
-    expect(violations(CARDS_JSON_SCHEMA)).toEqual([]);
-  });
-  it('the rewrite prompt is versioned and carries the hard rules', () => {
-    expect(PROMPT_VERSION).toMatch(/^rewrite-v\d+$/);
-    for (const rule of ['at most 25 words', 'at most 6 words', 'pronouns', 'cloze', 'untrusted']) {
-      expect(REWRITE_SYSTEM_PROMPT).toContain(rule);
-    }
-  });
-});
 
 describe('coerceParsed (defends against old / partial cached parses)', () => {
   it('fills defaults', () => {

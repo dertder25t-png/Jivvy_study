@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkCard, isCompound, type CardDraft } from './reject';
-import { evaluateGeneration, funnel, heuristicRewrite } from './pipeline';
+import { evaluateGeneration, funnel } from './pipeline';
+import { rewriteLocally } from './rewrite';
 import { extractCandidates } from './extract';
 
 const card = (over: Partial<CardDraft> = {}): CardDraft => ({
@@ -139,11 +140,11 @@ describe('evaluateGeneration', () => {
     expect(items.map((i) => i.rejectedBy)).toEqual([null, 'duplicate']);
   });
 
-  it('heuristic fallback produces cards Stage 3 can judge', () => {
+  it('the rule-based rewrite produces cards Stage 3 accepts', () => {
     const cands = extractCandidates(body);
-    const items = evaluateGeneration({ candidates: cands, response: heuristicRewrite(cands), existing: [] });
+    const items = evaluateGeneration({ candidates: cands, response: rewriteLocally(cands), existing: [] });
     expect(items).toHaveLength(3);
-    expect(items.filter((i) => !i.rejectedBy).length).toBeGreaterThan(0);
+    expect(items.map((i) => i.rejectedBy)).toEqual([null, null, null]);
     expect(items[0].card?.term).toBe('Reinforcement');
   });
 });

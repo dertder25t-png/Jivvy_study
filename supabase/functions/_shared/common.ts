@@ -51,13 +51,6 @@ export async function sha256Bytes(bytes: Uint8Array): Promise<string> {
   return 'bytes:' + [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function base64(bytes: Uint8Array): string {
-  let s = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) s += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  return btoa(s);
-}
-
 // ---------------------------------------------------------------- shared cache (§6.5)
 /** Cache entries hold parsed *document structure* only — never notes or user edits (§10). */
 export async function cacheGet(

@@ -189,20 +189,6 @@ If your syllabus uses different keywords, manually add them in the review screen
 - **Reliability:** Deterministic — same input, same output
 - **Edge cases:** Usually require manual fixes (acceptable)
 
-## Upgrade to AI Parsing (Optional)
-
-If you want Claude to handle edge cases:
-
-```bash
-# Set your Anthropic key
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-
-# Cost: ~2-3 cents per syllabus
-# Accuracy: ~95%+ on complex formats
-```
-
-Then update `supabase/functions/parse-syllabus/index.ts` to switch back to `getLlm()`.
-
 ---
 
 **Best for:** Most standard syllabi (CS, math, humanities, sciences)  

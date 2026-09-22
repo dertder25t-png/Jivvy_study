@@ -2,10 +2,9 @@
 #
 # You do two things by hand first (they need YOUR accounts, so nobody can do them for you):
 #   1. Create a free Supabase project at https://supabase.com  (Project name: anything. Save the database password.)
-#   2. (Optional but recommended) get an Anthropic API key at https://console.anthropic.com  - for reading syllabi.
 #
-# Then run this file. It logs you in, creates the database, deploys the server functions, stores your
-# key as a server secret, and writes the .env file the app needs. Nothing is sent anywhere else.
+# Then run this file. It logs you in, creates the database, deploys the server functions, and writes
+# the .env file the app needs. Nothing is sent anywhere else. No AI or API keys are involved.
 
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
@@ -49,20 +48,9 @@ Cli link --project-ref $ref
 Step '4/6' 'Creating your database (tables, privacy rules, file storage)'
 Cli db push
 
-# ---------------------------------------------------------------- 4. secrets + functions
+# ---------------------------------------------------------------- 4. functions
 Step '5/6' 'Server functions'
-$secure = Read-Host '  Paste your Anthropic API key (starts with sk-ant-). Press Enter to skip - the app still works, but it cannot read syllabus files or write smart flashcards' -AsSecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-$key = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-if ($key) {
-  Cli secrets set "ANTHROPIC_API_KEY=$key" --project-ref $ref
-} else {
-  Write-Host '  Skipped. You can add it later by running this script again.' -ForegroundColor Yellow
-}
-$key = $null
-
-foreach ($fn in @('parse-syllabus', 'rewrite-cards', 'delete-account')) {
+foreach ($fn in @('parse-syllabus', 'delete-account')) {
   Cli functions deploy $fn --project-ref $ref --use-api
 }
 

@@ -1,9 +1,8 @@
-// Local text extraction BEFORE any LLM call — sending text instead of images cuts cost substantially.
+// Text extraction for uploaded syllabi.
 //   PDF  → unpdf (pdf.js build for serverless)      DOCX → mammoth      TXT/MD → decode
-//   Image, or a PDF with no text layer → no text; the caller sends the bytes to a vision-capable model.
+//   Image, or a PDF with no text layer → no text; the caller asks the student to paste the text instead.
 //
-// Note: there is no OCR engine in the edge runtime, so "OCR first, vision as fallback" (spec §5.1)
-// collapses to "vision for anything without a text layer". Fine for v1; a hosted OCR step could slot in here.
+// Note: there is no OCR engine in the edge runtime. A hosted OCR step could slot in here.
 import { extractText, getDocumentProxy } from 'npm:unpdf';
 import mammoth from 'npm:mammoth';
 import { Buffer } from 'node:buffer';

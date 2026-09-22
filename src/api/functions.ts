@@ -1,12 +1,9 @@
-// Client for the two edge functions. Provider details never reach the app —
-// the app only knows "parse this syllabus" and "rewrite these candidates".
+// Client for the syllabus-parsing edge function. Nothing here (or anywhere in the app) calls an AI model.
 import { getSupabase } from '@/data/supabase';
 import { store } from '@/data/store';
 import { newId } from '@/data/id';
 import type { ParsedSyllabus } from '@/core/syllabus/types';
 import { coerceParsed } from '@/core/syllabus/types';
-import type { Candidate } from '@/core/flashcards/extract';
-import { heuristicRewrite, type RewriteResponse } from '@/core/flashcards/pipeline';
 
 export interface ParseResult {
   parsed: ParsedSyllabus;
@@ -67,29 +64,4 @@ export async function parseSyllabus(
     rawText: data.raw_text ?? (input.kind === 'text' ? input.text : ''),
     filePath,
   };
-}
-
-export interface RewriteResult extends RewriteResponse {
-  /** Set when we fell back to the offline heuristic instead of the model. */
-  fellBack: boolean;
-}
-
-/** Stage 2. Falls back to the deterministic heuristic when offline / in demo mode. */
-export async function rewriteCards(candidates: Candidate[]): Promise<RewriteResult> {
-  if (store.mode === 'supabase') {
-    try {
-      const { data, error } = await getSupabase().functions.invoke('rewrite-cards', {
-        body: {
-          candidates: candidates.map((c) => ({
-            id: c.id, pattern_type: c.pattern_type, text: c.text, term_hint: c.term_hint, body_hint: c.body_hint,
-          })),
-        },
-      });
-      if (error) throw error;
-      return { ...(data as RewriteResponse), fellBack: false };
-    } catch (e) {
-      console.warn('[rewriteCards] falling back to heuristic:', (e as Error).message);
-    }
-  }
-  return { ...heuristicRewrite(candidates), fellBack: true };
 }
