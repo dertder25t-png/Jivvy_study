@@ -2,15 +2,16 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { deleteCard, updateCard } from '@/data/actions';
+import { deleteCard, saveNote, updateCard } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { Badge, Button, Empty, Field, Row, Screen, Section, T } from '@/ui/components';
 import { radius, space, useColors } from '@/ui/theme';
-import type { Card as CardRow } from '@/types/db';
+import type { Card as CardRow, Note } from '@/types/db';
 
 interface SetGroup {
   key: string;
   title: string;
+  noteId: string | null;
   cards: CardRow[];
 }
 
@@ -22,7 +23,7 @@ function groupIntoSets(list: CardRow[], noteTitle: (id: string) => string): SetG
     const key = k.source_note_id ?? '__ungrouped__';
     let g = m.get(key);
     if (!g) {
-      g = { key, title: k.source_note_id ? noteTitle(k.source_note_id) : 'Ungrouped cards', cards: [] };
+      g = { key, title: k.source_note_id ? noteTitle(k.source_note_id) : 'Ungrouped cards', noteId: k.source_note_id, cards: [] };
       m.set(key, g);
       order.push(key);
     }
@@ -30,6 +31,10 @@ function groupIntoSets(list: CardRow[], noteTitle: (id: string) => string): SetG
   }
   return order.map((k) => m.get(k)!);
 }
+
+// Card tiles fill the row and wrap into as many columns as the screen has room for —
+// one on a phone, several side by side on a desktop window — instead of one skinny full-width bar each.
+const TILE_STYLE = { flexGrow: 1, flexBasis: 260, minWidth: 240, maxWidth: 420 } as const;
 
 export default function Deck() {
   const sem = useSemester();
@@ -42,8 +47,11 @@ export default function Deck() {
   const [editing, setEditing] = useState<CardRow | null>(null);
   const [eTerm, setETerm] = useState('');
   const [eDef, setEDef] = useState('');
+  const [renamingSet, setRenamingSet] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState('');
+  const [confirmDeleteSet, setConfirmDeleteSet] = useState<string | null>(null);
 
-  const noteById = useMemo(() => new Map(sem.rows.notes.map((n) => [n.id, n])), [sem.rows.notes]);
+  const noteById = useMemo(() => new Map<string, Note>(sem.rows.notes.map((n) => [n.id, n])), [sem.rows.notes]);
   const noteTitle = (id: string) => noteById.get(id)?.title || 'Untitled set';
 
   if (cards.length === 0) {
@@ -74,11 +82,23 @@ export default function Deck() {
     setEditing(null);
   };
 
+  const renameSet = (setKey: string, noteId: string) => {
+    if (!renameText.trim()) { setRenamingSet(null); return; }
+    const note = noteById.get(noteId);
+    if (note) saveNote(note, { title: renameText.trim() });
+    setRenamingSet(null);
+  };
+
+  const deleteSet = (set: SetGroup) => {
+    for (const k of set.cards) deleteCard(k);
+    setConfirmDeleteSet(null);
+  };
+
   const renderCardRow = (k: CardRow) => {
     const isOpen = openCardId === k.id;
     if (editing?.id === k.id) {
       return (
-        <View key={k.id} style={{ gap: 8, backgroundColor: c.surfaceAlt, borderRadius: radius.md, padding: space.sm }}>
+        <View key={k.id} style={[TILE_STYLE, { gap: 8, backgroundColor: c.surfaceAlt, borderRadius: radius.md, padding: space.sm }]}>
           <Field value={eTerm} onChangeText={setETerm} placeholder="Term" />
           <Field value={eDef} onChangeText={setEDef} placeholder="Definition" multiline style={{ minHeight: 64 }} />
           <Row>
@@ -89,7 +109,7 @@ export default function Deck() {
       );
     }
     return (
-      <View key={k.id} style={{ borderRadius: radius.md, backgroundColor: c.surfaceAlt, overflow: 'hidden' }}>
+      <View key={k.id} style={[TILE_STYLE, { borderRadius: radius.md, backgroundColor: c.surfaceAlt, overflow: 'hidden' }]}>
         <Pressable onPress={() => setOpenCardId(isOpen ? null : k.id)} accessibilityRole="button" accessibilityLabel={`${isOpen ? 'Hide' : 'Show'} definition for ${k.term}`}>
           <Row style={{ justifyContent: 'space-between', padding: space.sm }}>
             <T variant="body" style={{ fontWeight: '600', flex: 1 }}>{k.term}</T>
@@ -112,6 +132,37 @@ export default function Deck() {
     );
   };
 
+  const renderSetActions = (setKey: string, set: SetGroup) => {
+    if (!set.noteId) return null; // "Ungrouped cards" isn't a real set — nothing to rename or bulk-delete.
+
+    if (renamingSet === setKey) {
+      return (
+        <Row gap={8}>
+          <Field value={renameText} onChangeText={setRenameText} style={{ flex: 1 }} autoFocus />
+          <Button title="Cancel" small variant="secondary" onPress={() => setRenamingSet(null)} />
+          <Button title="Save" small onPress={() => renameSet(setKey, set.noteId!)} />
+        </Row>
+      );
+    }
+    if (confirmDeleteSet === setKey) {
+      return (
+        <Row style={{ justifyContent: 'space-between' }}>
+          <T variant="small" muted style={{ flex: 1 }}>Delete all {set.cards.length} cards in this set? This can't be undone.</T>
+          <Row gap={8}>
+            <Button title="Cancel" small variant="secondary" onPress={() => setConfirmDeleteSet(null)} />
+            <Button title={`Delete ${set.cards.length}`} small variant="ghost" onPress={() => deleteSet(set)} />
+          </Row>
+        </Row>
+      );
+    }
+    return (
+      <Row gap={8}>
+        <Button title="Rename set" small variant="ghost" onPress={() => { setRenamingSet(setKey); setRenameText(set.title); }} />
+        <Button title="Delete set" small variant="ghost" onPress={() => setConfirmDeleteSet(setKey)} />
+      </Row>
+    );
+  };
+
   const renderSet = (groupKey: string, set: SetGroup) => {
     const setKey = `${groupKey}:${set.key}`;
     const isOpen = openSets.has(setKey);
@@ -127,8 +178,11 @@ export default function Deck() {
           </Row>
         </Pressable>
         {isOpen ? (
-          <View style={{ gap: 8, padding: space.md, paddingTop: 0 }}>
-            {set.cards.map(renderCardRow)}
+          <View style={{ gap: space.sm, padding: space.md, paddingTop: 0 }}>
+            {renderSetActions(setKey, set)}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {set.cards.map(renderCardRow)}
+            </View>
           </View>
         ) : null}
       </View>
