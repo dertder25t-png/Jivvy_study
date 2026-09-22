@@ -1,17 +1,24 @@
-import React, { useMemo, useState } from 'react';
-import { Switch, View } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { cardsFor, inScope, minutesFor, paceSecondsPerCard, studyAdvice, type StudyOrder } from '@/core/session';
-import { relativeTime } from '@/core/time';
-import { useSemester } from '@/data/derived';
-import { Button, Card, Chip, Empty, Row, Screen, Section, T } from '@/ui/components';
-import { useColors } from '@/ui/theme';
+import React, { useMemo, useState } from ‘react’;
+import { Switch, View } from ‘react-native’;
+import { useLocalSearchParams, useRouter } from ‘expo-router’;
+import { cardsFor, inScope, minutesFor, paceSecondsPerCard, studyAdvice, type StudyOrder } from ‘@/core/session’;
+import { relativeTime } from ‘@/core/time’;
+import { useSemester } from ‘@/data/derived’;
+import { Button, Card, Chip, Empty, Row, Screen, Section, T } from ‘@/ui/components’;
+import { useColors } from ‘@/ui/theme’;
+
+type StudyMode = ‘learn’ | ‘review’;
 
 const MINUTE_CHOICES = [5, 10, 15, 30];
 const ORDERS: Array<{ key: StudyOrder; label: string; hint: string }> = [
-  { key: 'smart', label: 'Smart', hint: 'What’s due first, then your weakest cards.' },
-  { key: 'weakest', label: 'Weakest first', hint: 'Ignores the schedule — the cards you know least.' },
-  { key: 'shuffle', label: 'Shuffle', hint: 'Random order, good for a final run-through.' },
+  { key: ‘smart’, label: ‘Smart’, hint: ‘What’s due first, then your weakest cards.’ },
+  { key: ‘weakest’, label: ‘Weakest first’, hint: ‘Ignores the schedule — the cards you know least.’ },
+  { key: ‘shuffle’, label: ‘Shuffle’, hint: ‘Random order, good for a final run-through.’ },
+];
+
+const MODES: Array<{ key: StudyMode; label: string; hint: string }> = [
+  { key: ‘learn’, label: ‘Learn Mode’, hint: ‘Type definitions twice: visible then from memory. Great for retention!’ },
+  { key: ‘review’, label: ‘Review Mode’, hint: ‘Spaced repetition with SM-2 algorithm. Optimize when to review each card.’ },
 ];
 
 /**
@@ -25,6 +32,7 @@ export default function StudySetup() {
   const c = useColors();
   const { now, tz } = sem;
 
+  const [mode, setMode] = useState<StudyMode>('review');
   const [courseId, setCourseId] = useState<string | null>(params.courseId ?? null);
   const [topicId, setTopicId] = useState<string | null>(null);
   const [examId, setExamId] = useState<string | null>(params.examId ?? null);
@@ -71,18 +79,40 @@ export default function StudySetup() {
     q.set('limit', String(Math.max(1, limit)));
     q.set('order', order);
     if (!counts) q.set('practice', '1');
-    router.push(`/cards/review?${q.toString()}`);
+
+    const target = mode === 'learn' ? '/cards/learn' : '/cards/review';
+    router.push(`${target}?${q.toString()}`);
   };
 
   return (
     <Screen
       footer={
         <View style={{ gap: 6 }}>
-          <Button title={pool.length === 0 ? 'No cards match' : `Start · ${limit} card${limit === 1 ? '' : 's'} · about ${estMinutes} min`} onPress={start} disabled={pool.length === 0} />
+          <Button
+            title={
+              pool.length === 0
+                ? 'No cards match'
+                : mode === 'learn'
+                  ? `Start Learning · ${pool.length} card${pool.length === 1 ? '' : 's'}`
+                  : `Start · ${limit} card${limit === 1 ? '' : 's'} · about ${estMinutes} min`
+            }
+            onPress={start}
+            disabled={pool.length === 0}
+          />
         </View>
       }
     >
       <T muted>Study whenever you like — nothing here is locked to the schedule. Suggestions below are just that.</T>
+
+      {/* ---------------- mode ---------------- */}
+      <Section title="Study style">
+        <Row style={{ flexWrap: 'wrap' }}>
+          {MODES.map((m) => (
+            <Chip key={m.key} label={m.label} selected={mode === m.key} onPress={() => setMode(m.key)} />
+          ))}
+        </Row>
+        <T variant="small" muted>{MODES.find((m) => m.key === mode)?.hint}</T>
+      </Section>
 
       {/* ---------------- what ---------------- */}
       <Section title="What to study">
@@ -119,26 +149,30 @@ export default function StudySetup() {
         </T>
       </Section>
 
-      {/* ---------------- how long ---------------- */}
-      <Section title="How long">
-        <Row style={{ flexWrap: 'wrap' }}>
-          {MINUTE_CHOICES.map((m) => (
-            <Chip key={m} label={`${m} min`} selected={minutes === m} onPress={() => setMinutes(m)} />
-          ))}
-          <Chip label={`All ${pool.length}`} selected={minutes === 'all'} onPress={() => setMinutes('all')} />
-        </Row>
-        <T variant="small" muted>
-          {pool.length === 0 ? 'Nothing in this selection.' : `That's ${limit} card${limit === 1 ? '' : 's'}, about ${estMinutes} min at your pace (~${pace}s a card).`}
-        </T>
-      </Section>
+      {mode === 'review' && (
+        <>
+          {/* ---------------- how long ---------------- */}
+          <Section title="How long">
+            <Row style={{ flexWrap: 'wrap' }}>
+              {MINUTE_CHOICES.map((m) => (
+                <Chip key={m} label={`${m} min`} selected={minutes === m} onPress={() => setMinutes(m)} />
+              ))}
+              <Chip label={`All ${pool.length}`} selected={minutes === 'all'} onPress={() => setMinutes('all')} />
+            </Row>
+            <T variant="small" muted>
+              {pool.length === 0 ? 'Nothing in this selection.' : `That's ${limit} card${limit === 1 ? '' : 's'}, about ${estMinutes} min at your pace (~${pace}s a card).`}
+            </T>
+          </Section>
 
-      {/* ---------------- order ---------------- */}
-      <Section title="Order">
-        <Row style={{ flexWrap: 'wrap' }}>
-          {ORDERS.map((o) => <Chip key={o.key} label={o.label} selected={order === o.key} onPress={() => setOrder(o.key)} />)}
-        </Row>
-        <T variant="small" muted>{ORDERS.find((o) => o.key === order)?.hint}</T>
-      </Section>
+          {/* ---------------- order ---------------- */}
+          <Section title="Order">
+            <Row style={{ flexWrap: 'wrap' }}>
+              {ORDERS.map((o) => <Chip key={o.key} label={o.label} selected={order === o.key} onPress={() => setOrder(o.key)} />)}
+            </Row>
+            <T variant="small" muted>{ORDERS.find((o) => o.key === order)?.hint}</T>
+          </Section>
+        </>
+      )}
 
       {/* ---------------- schedule ---------------- */}
       <Card>
