@@ -1,6 +1,8 @@
 // Row shapes mirror supabase/migrations/0001_init.sql (snake_case on purpose:
 // the same objects flow to Postgres and to the local demo store unchanged).
 
+import type { OutlineNode } from '@/core/outline';
+
 export type ISODate = string; // 'YYYY-MM-DD'
 export type ISODateTime = string; // full ISO-8601 timestamp
 
@@ -186,6 +188,10 @@ export interface Note {
   body: string;
   captured_via: 'widget' | 'voice' | 'share' | 'in_app' | string;
   course_inferred: boolean;
+  /** 'outline' notes are edited as a structured bullet tree (see `outline`); `body` still
+   * holds a mirrored nested-markdown rendering of that tree for search/flashcards/export. */
+  note_type: 'text' | 'outline';
+  outline: OutlineNode[] | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }

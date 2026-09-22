@@ -176,7 +176,8 @@ export function addSampleSemester(now: Date): Course[] {
     const at = nowIso();
     store.insert('notes', {
       id: newId(), user_id: store.userId, course_id: course.id, topic_id: topic?.id ?? null, parent_note_id: null,
-      title: null, body: s.body, captured_via: 'in_app', course_inferred: false, created_at: at, updated_at: at,
+      title: null, body: s.body, captured_via: 'in_app', course_inferred: false,
+      note_type: 'text', outline: null, created_at: at, updated_at: at,
     });
   }
   return courses;
@@ -264,7 +265,10 @@ export function removeAbsence(a: Absence) {
 }
 
 // ---------------------------------------------------------------- notes
-export function createNote(args: { body: string; via?: string; explicitCourseId?: string | null; now?: Date }): Note {
+export function createNote(args: {
+  body: string; via?: string; explicitCourseId?: string | null; now?: Date;
+  noteType?: Note['note_type']; outline?: Note['outline'];
+}): Note {
   const now = args.now ?? new Date();
   const route = routeNote({
     text: args.body, now, tz: prefs.get().tz,
@@ -274,7 +278,8 @@ export function createNote(args: { body: string; via?: string; explicitCourseId?
   const note: Note = {
     id: newId(), user_id: store.userId, course_id: route.course_id, topic_id: route.topic_id, parent_note_id: null,
     title: null, body: args.body, captured_via: args.via ?? 'in_app',
-    course_inferred: route.course_inferred, created_at: at, updated_at: at,
+    course_inferred: route.course_inferred, note_type: args.noteType ?? 'text', outline: args.outline ?? null,
+    created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
 }
@@ -284,12 +289,13 @@ export function createSubNote(parent: Note, body = ''): Note {
   const at = nowIso();
   const note: Note = {
     id: newId(), user_id: store.userId, course_id: parent.course_id, topic_id: parent.topic_id, parent_note_id: parent.id,
-    title: null, body, captured_via: 'in_app', course_inferred: false, created_at: at, updated_at: at,
+    title: null, body, captured_via: 'in_app', course_inferred: false,
+    note_type: 'text', outline: null, created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
 }
 
-export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body'>>): Note {
+export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body' | 'note_type' | 'outline'>>): Note {
   return store.update('notes', note, { ...patch, updated_at: nowIso() });
 }
 
