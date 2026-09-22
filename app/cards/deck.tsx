@@ -4,9 +4,19 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteCard, saveNote, updateCard } from '@/data/actions';
 import { useSemester } from '@/data/derived';
+import { stateFromReviews } from '@/core/scheduling';
+import { relativeTime } from '@/core/time';
 import { Badge, Button, Empty, Field, Row, Screen, Section, T } from '@/ui/components';
 import { radius, space, useColors } from '@/ui/theme';
-import type { Card as CardRow, Note } from '@/types/db';
+import type { Card as CardRow, CardReview, Note } from '@/types/db';
+
+/** "New", "Overdue", or "Due tomorrow" — the spaced-repetition schedule, made visible. */
+function dueInfo(reviews: CardReview[], now: Date, tz: string): { label: string; tone: 'muted' | 'warn' | 'default' } {
+  const s = stateFromReviews(reviews);
+  if (!s.dueAt) return { label: 'New — not studied yet', tone: 'muted' };
+  if (s.dueAt.getTime() <= now.getTime()) return { label: 'Overdue for review', tone: 'warn' };
+  return { label: `Due ${relativeTime(s.dueAt, now, tz)}`, tone: 'default' };
+}
 
 interface SetGroup {
   key: string;
@@ -53,6 +63,16 @@ export default function Deck() {
 
   const noteById = useMemo(() => new Map<string, Note>(sem.rows.notes.map((n) => [n.id, n])), [sem.rows.notes]);
   const noteTitle = (id: string) => noteById.get(id)?.title || 'Untitled set';
+
+  const reviewsByCard = useMemo(() => {
+    const m = new Map<string, CardReview[]>();
+    for (const r of sem.rows.card_reviews) {
+      const arr = m.get(r.card_id);
+      if (arr) arr.push(r);
+      else m.set(r.card_id, [r]);
+    }
+    return m;
+  }, [sem.rows.card_reviews]);
 
   if (cards.length === 0) {
     return (
@@ -108,11 +128,19 @@ export default function Deck() {
         </View>
       );
     }
+    const due = dueInfo(reviewsByCard.get(k.id) ?? [], sem.now, sem.tz);
+    const dueColor = due.tone === 'warn' ? c.warn : due.tone === 'muted' ? c.muted : c.text;
+    const reviews = reviewsByCard.get(k.id) ?? [];
+    const lastReviewedAt = stateFromReviews(reviews).lastReviewedAt;
+
     return (
       <View key={k.id} style={[TILE_STYLE, { borderRadius: radius.md, backgroundColor: c.surfaceAlt, overflow: 'hidden' }]}>
         <Pressable onPress={() => setOpenCardId(isOpen ? null : k.id)} accessibilityRole="button" accessibilityLabel={`${isOpen ? 'Hide' : 'Show'} definition for ${k.term}`}>
           <Row style={{ justifyContent: 'space-between', padding: space.sm }}>
-            <T variant="body" style={{ fontWeight: '600', flex: 1 }}>{k.term}</T>
+            <View style={{ flex: 1 }}>
+              <T variant="body" style={{ fontWeight: '600' }}>{k.term}</T>
+              <T variant="small" style={{ color: dueColor }}>{due.label}</T>
+            </View>
             <Row gap={6}>
               {k.origin === 'generated' ? <Badge label="from notes" /> : null}
               <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={16} color={c.muted} />
@@ -122,6 +150,9 @@ export default function Deck() {
         {isOpen ? (
           <View style={{ paddingHorizontal: space.sm, paddingBottom: space.sm, gap: space.sm }}>
             <T variant="small" muted>{k.definition}</T>
+            <T variant="small" muted>
+              {lastReviewedAt ? `Last studied ${relativeTime(lastReviewedAt, sem.now, sem.tz)}` : 'Never studied yet'}
+            </T>
             <Row>
               <Button title="Edit" small variant="secondary" onPress={() => startEdit(k)} style={{ flex: 1 }} />
               <Button title="Delete" small variant="ghost" onPress={() => deleteCard(k)} style={{ flex: 1 }} />
