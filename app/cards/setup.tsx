@@ -1,24 +1,24 @@
-import React, { useMemo, useState } from ‘react’;
-import { Switch, View } from ‘react-native’;
-import { useLocalSearchParams, useRouter } from ‘expo-router’;
-import { cardsFor, inScope, minutesFor, paceSecondsPerCard, studyAdvice, type StudyOrder } from ‘@/core/session’;
-import { relativeTime } from ‘@/core/time’;
-import { useSemester } from ‘@/data/derived’;
-import { Button, Card, Chip, Empty, Row, Screen, Section, T } from ‘@/ui/components’;
-import { useColors } from ‘@/ui/theme’;
+import React, { useMemo, useState } from 'react';
+import { Switch, View } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { cardsFor, inScope, minutesFor, paceSecondsPerCard, studyAdvice, type StudyOrder } from '@/core/session';
+import { relativeTime } from '@/core/time';
+import { useSemester } from '@/data/derived';
+import { Button, Card, Chip, Empty, Row, Screen, Section, T } from '@/ui/components';
+import { useColors } from '@/ui/theme';
 
-type StudyMode = ‘learn’ | ‘review’;
+type StudyMode = 'learn' | 'review';
 
 const MINUTE_CHOICES = [5, 10, 15, 30];
 const ORDERS: Array<{ key: StudyOrder; label: string; hint: string }> = [
-  { key: ‘smart’, label: ‘Smart’, hint: ‘What’s due first, then your weakest cards.’ },
-  { key: ‘weakest’, label: ‘Weakest first’, hint: ‘Ignores the schedule — the cards you know least.’ },
-  { key: ‘shuffle’, label: ‘Shuffle’, hint: ‘Random order, good for a final run-through.’ },
+  { key: 'smart', label: 'Smart', hint: 'What's due first, then your weakest cards.' },
+  { key: 'weakest', label: 'Weakest first', hint: 'Ignores the schedule - the cards you know least.' },
+  { key: 'shuffle', label: 'Shuffle', hint: 'Random order, good for a final run-through.' },
 ];
 
 const MODES: Array<{ key: StudyMode; label: string; hint: string }> = [
-  { key: ‘learn’, label: ‘Learn Mode’, hint: ‘Type definitions twice: visible then from memory. Great for retention!’ },
-  { key: ‘review’, label: ‘Review Mode’, hint: ‘Spaced repetition with SM-2 algorithm. Optimize when to review each card.’ },
+  { key: 'learn', label: 'Learn Mode', hint: 'Type definitions twice: visible then from memory. Great for retention!' },
+  { key: 'review', label: 'Review Mode', hint: 'Spaced repetition with SM-2 algorithm. Optimize when to review each card.' },
 ];
 
 /**
@@ -102,7 +102,7 @@ export default function StudySetup() {
         </View>
       }
     >
-      <T muted>Study whenever you like — nothing here is locked to the schedule. Suggestions below are just that.</T>
+      <T muted>Study whenever you like - nothing here is locked to the schedule. Suggestions below are just that.</T>
 
       {/* ---------------- mode ---------------- */}
       <Section title="Study style">
@@ -181,7 +181,7 @@ export default function StudySetup() {
             <T variant="body" style={{ fontWeight: '600' }}>Count this toward my schedule</T>
             <T variant="small" muted>
               {counts
-                ? 'Your ratings help plan future reviews. Studying early is safe — it never pushes a card’s next review further away.'
+                ? 'Your ratings help plan future reviews. Studying early is safe - it never pushes a card's next review further away.'
                 : 'Practice only: nothing you do here changes your review schedule.'}
             </T>
           </View>
@@ -193,7 +193,7 @@ export default function StudySetup() {
       <Card tone="primary">
         <T variant="label" color={c.primary}>How much time is worth spending</T>
         {advice.lines.map((l, i) => <T key={i} variant="small">{l}</T>)}
-        <T variant="small" muted>Just a guide — study for as long or as little as you like.</T>
+        <T variant="small" muted>Just a guide - study for as long or as little as you like.</T>
       </Card>
     </Screen>
   );
