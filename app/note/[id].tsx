@@ -6,16 +6,13 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { countWords } from '@/core/markdown';
-import { emptyOutline, outlineToMarkdown, type OutlineNode } from '@/core/outline';
+import { bodyToOutline, emptyOutline, outlineToMarkdown, type OutlineNode } from '@/core/outline';
 import { createNote, createSubNote, deleteNote, fileNote, saveNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { prefs, usePrefs } from '@/data/prefs';
 import { store } from '@/data/store';
 import { Button, Chip, Empty, Row, Screen, T } from '@/ui/components';
-import { BODY_LINE, BODY_SIZE, Markdown } from '@/ui/Markdown';
 import { NoteCardsPanel, PANEL_WIDTH } from '@/ui/NoteCardsPanel';
-import { NoteToolbar } from '@/ui/NoteToolbar';
-import { NotePreview } from '@/ui/NotePreview';
 import { OutlineEditor } from '@/ui/OutlineEditor';
 import { space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
@@ -61,11 +58,11 @@ function IconBtn({
 
 /**
  * The note page. Open and borderless like a sheet of paper: a big title, one wide column,
- * and nothing boxed in. Plain text + markdown underneath; "reading view" renders it.
- * The flashcard panel lives on the left and slides in and out.
+ * and nothing boxed in. Every note is a bullet outline — type freely on one line, or press
+ * Tab to nest a sub-point. The flashcard panel lives on the left and slides in and out.
  */
 export default function NoteEditor() {
-  const { id, courseId, type } = useLocalSearchParams<{ id: string; courseId?: string; type?: string }>();
+  const { id, courseId } = useLocalSearchParams<{ id: string; courseId?: string }>();
   const c = useColors();
   const router = useRouter();
   const sem = useSemester();
@@ -81,38 +78,22 @@ export default function NoteEditor() {
   const deleted = useRef(false);
   const noteId = created.current?.id ?? (isNew ? null : id);
   const note = noteId ? sem.rows.notes.find((n) => n.id === noteId) ?? null : null;
-  const isOutline = existing ? existing.note_type === 'outline' : type === 'outline';
 
   const [title, setTitle] = useState(existing?.title ?? '');
-  const [body, setBody] = useState(existing?.body ?? '');
-  const [outline, setOutline] = useState<OutlineNode[]>(existing?.outline ?? emptyOutline());
+  const [outline, setOutline] = useState<OutlineNode[]>(
+    existing?.outline ?? (existing ? bodyToOutline(existing.body) : emptyOutline()),
+  );
+  const [body, setBody] = useState(existing?.body ?? outlineToMarkdown(outline));
   const outlineDirty = useRef(false);
-  const [mode, setMode] = useState<'write' | 'read'>(isNew || !existing?.body.trim() ? 'write' : 'read');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [showPreview, setShowPreview] = useState(!wide); // on mobile, start with editor only
   const latest = useRef({ title, body, outline });
   latest.current = { title, body, outline };
-  const bodyRef = useRef<TextInput>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onOutlineChange = (next: OutlineNode[]) => {
     outlineDirty.current = true;
     setOutline(next);
     setBody(outlineToMarkdown(next));
-  };
-
-  // Helper to insert markdown (inserts before selection or at end)
-  const insertMarkdown = (before: string, after: string = '') => {
-    // For MVP: insert at the end of the text
-    // On web, we could use cursor position from the textarea
-    // On native, this is simpler
-    const newBody = body + (body.trim() && !body.endsWith('\n') ? '\n' : '') + before + after;
-    setBody(newBody);
-
-    // Focus back on the input
-    setTimeout(() => {
-      bodyRef.current?.focus();
-    }, 50);
   };
 
   // ---------------------------------------------------------------- saving
@@ -127,17 +108,14 @@ export default function NoteEditor() {
     const { title: t, body: b, outline: o } = latest.current;
     const cur = findNote();
     if (cur) {
-      if (cur.body !== b || (cur.title ?? '') !== t.trim() || (isOutline && outlineDirty.current)) {
-        saveNote(cur, { title: t.trim() || null, body: b, ...(isOutline ? { note_type: 'outline' as const, outline: o } : {}) });
+      if (cur.body !== b || (cur.title ?? '') !== t.trim() || outlineDirty.current) {
+        saveNote(cur, { title: t.trim() || null, body: b, outline: o });
         outlineDirty.current = false;
       }
       return findNote();
     }
     if (!b.trim() && !t.trim()) return null;
-    const n = createNote({
-      body: b, via: 'in_app', explicitCourseId: courseId ?? null,
-      noteType: isOutline ? 'outline' : 'text', outline: isOutline ? o : null,
-    });
+    const n = createNote({ body: b, via: 'in_app', explicitCourseId: courseId ?? null, outline: o });
     created.current = n;
     outlineDirty.current = false;
     if (t.trim()) saveNote(n, { title: t.trim() });
@@ -175,27 +153,6 @@ export default function NoteEditor() {
   }, [title, body, outline]);
 
   useEffect(() => () => leave(), []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---------------------------------------------------------------- mode
-  const enterWrite = () => {
-    setMode('write');
-    setTimeout(() => bodyRef.current?.focus(), 60);
-  };
-  const toggleMode = () => (mode === 'write' ? (persist(), setMode('read')) : enterWrite());
-  const toggleRef = useRef(toggleMode);
-  toggleRef.current = toggleMode;
-
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'e') {
-        e.preventDefault();
-        toggleRef.current();
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
 
   // ---------------------------------------------------------------- flashcard panel (left)
   const progress = useRef(new Animated.Value(panelOpen ? 1 : 0)).current;
@@ -257,7 +214,7 @@ export default function NoteEditor() {
   const pendingCount = note ? sem.rows.cards.filter((k) => k.source_note_id === note.id && k.status === 'pending').length : 0;
   const words = countWords(body);
   const dirty = note
-    ? note.body !== body || (note.title ?? '') !== title.trim() || (isOutline && outlineDirty.current)
+    ? note.body !== body || (note.title ?? '') !== title.trim() || outlineDirty.current
     : body.trim() !== '' || title.trim() !== '';
 
   // ---------------------------------------------------------------- page
@@ -274,12 +231,6 @@ export default function NoteEditor() {
         </Pressable>
         {subNoteQuickAddEnabled && note ? (
           <IconBtn icon="add-outline" label="Add sub-note" onPress={addSubNote} badge={subNoteCount || undefined} />
-        ) : null}
-        {!isOutline && mode === 'write' && !wide ? (
-          <IconBtn icon={showPreview ? 'create-outline' : 'eye-outline'} label={showPreview ? 'Editor' : 'Preview'} onPress={() => setShowPreview((v) => !v)} active={showPreview} />
-        ) : null}
-        {!isOutline ? (
-          <IconBtn icon={mode === 'write' ? 'book-outline' : 'create-outline'} label={mode === 'write' ? 'Reading view' : 'Edit'} onPress={toggleMode} />
         ) : null}
         <IconBtn icon="ellipsis-vertical" label="More" onPress={() => setMenuOpen((v) => !v)} active={menuOpen} />
       </View>
@@ -305,104 +256,29 @@ export default function NoteEditor() {
 
       {/* the page */}
       <View style={{ flex: 1 }}>
-        {isOutline ? (
-          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 120, flexGrow: 1 }}>
-            <View style={column}>
-              {parentNote ? (
-                <Pressable onPress={() => { leave(); router.push(`/note/${parentNote.id}`); }} accessibilityRole="button" style={{ paddingTop: 10 }}>
-                  <T variant="small" color={c.primary}>↑ {parentNote.title || 'Back to parent note'}</T>
-                </Pressable>
-              ) : null}
-              <TextInput
-                value={title}
-                onChangeText={setTitle}
-                placeholder="Untitled"
-                placeholderTextColor={c.muted}
-                returnKeyType="next"
-                blurOnSubmit={false}
-                onKeyPress={onKeyPressSubNote}
-                style={{
-                  color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
-                  borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
-                }}
-              />
-              <OutlineEditor nodes={outline} onChange={onOutlineChange} autoFocus={isNew} />
-            </View>
-          </ScrollView>
-        ) : mode === 'write' ? (
-          <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column' }}>
-            {/* Editor column (left on desktop, full width on mobile unless showing preview) */}
-            {(!showPreview || wide) && (
-              <View style={{
-                flex: wide ? 1 : 1,
-                backgroundColor: c.bg,
-              }}>
-                {/* Toolbar */}
-                <NoteToolbar onInsertMarkdown={insertMarkdown} />
-
-                {/* Editor */}
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                  <View style={column}>
-                    {parentNote ? (
-                      <Pressable onPress={() => { leave(); router.push(`/note/${parentNote.id}`); }} accessibilityRole="button" style={{ paddingTop: 10 }}>
-                        <T variant="small" color={c.primary}>↑ {parentNote.title || 'Back to parent note'}</T>
-                      </Pressable>
-                    ) : null}
-                    <TextInput
-                      value={title}
-                      onChangeText={setTitle}
-                      placeholder="Untitled"
-                      placeholderTextColor={c.muted}
-                      returnKeyType="next"
-                      blurOnSubmit={false}
-                      onSubmitEditing={() => bodyRef.current?.focus()}
-                      onKeyPress={onKeyPressSubNote}
-                      style={{
-                        color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
-                        borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
-                      }}
-                    />
-                    <TextInput
-                      ref={bodyRef}
-                      value={body}
-                      onChangeText={setBody}
-                      multiline
-                      autoFocus={isNew}
-                      placeholder="Start writing…"
-                      placeholderTextColor={c.muted}
-                      onKeyPress={onKeyPressSubNote}
-                      style={{
-                        flex: 1, color: c.text, fontSize: BODY_SIZE, lineHeight: BODY_LINE, textAlignVertical: 'top',
-                        paddingTop: 4, paddingBottom: 90, paddingHorizontal: 0, borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
-                      }}
-                    />
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {/* Preview pane (right on desktop, toggle on mobile) */}
-            {(wide || showPreview) && (
-              <View style={{
-                flex: 1,
-                backgroundColor: c.bg,
-              }}>
-                <NotePreview markdown={body} />
-              </View>
-            )}
+        <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 120, flexGrow: 1 }}>
+          <View style={column}>
+            {parentNote ? (
+              <Pressable onPress={() => { leave(); router.push(`/note/${parentNote.id}`); }} accessibilityRole="button" style={{ paddingTop: 10 }}>
+                <T variant="small" color={c.primary}>↑ {parentNote.title || 'Back to parent note'}</T>
+              </Pressable>
+            ) : null}
+            <TextInput
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Untitled"
+              placeholderTextColor={c.muted}
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onKeyPress={onKeyPressSubNote}
+              style={{
+                color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
+                borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
+              }}
+            />
+            <OutlineEditor nodes={outline} onChange={onOutlineChange} autoFocus={isNew} />
           </View>
-        ) : (
-          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 120, flexGrow: 1 }}>
-            <Pressable onPress={enterWrite} style={{ width: '100%', maxWidth: COLUMN, paddingHorizontal: 24, flexGrow: 1, minHeight: 400 }} accessibilityLabel="Tap to edit">
-              {title.trim() ? (
-                <T variant="big" style={{ paddingVertical: 14, fontSize: 34 }} selectable>{title}</T>
-              ) : (
-                <View style={{ height: 14 }} />
-              )}
-              {body.trim() ? <Markdown source={body} /> : <T muted>Nothing here yet — tap to start writing.</T>}
-            </Pressable>
-          </ScrollView>
-        )}
+        </ScrollView>
       </View>
 
       {/* quiet status, bottom-right like a status bar */}

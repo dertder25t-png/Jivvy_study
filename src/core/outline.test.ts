@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  cycleChecked, deleteNode, flattenVisible, indentNode, insertSiblingAfter, moveDown, moveUp,
+  bodyToOutline, cycleChecked, deleteNode, flattenVisible, indentNode, insertSiblingAfter, moveDown, moveUp,
   newNode, outdentNode, outlineToMarkdown, toggleCollapsed, updateNodeText, type OutlineNode,
 } from './outline';
 import { parseBlocks } from './markdown';
@@ -146,5 +146,36 @@ describe('outlineToMarkdown', () => {
     if (block.t !== 'list') throw new Error('expected list');
     expect(block.items.map((it) => it.depth)).toEqual([0, 1, 1, 1]);
     expect(block.items.map((it) => it.task)).toEqual([null, null, true, false]);
+  });
+});
+
+describe('bodyToOutline', () => {
+  it('returns a single empty node for blank input', () => {
+    const out = bodyToOutline('');
+    expect(out).toHaveLength(1);
+    expect(out[0].text).toBe('');
+  });
+
+  it('nests list lines by indentation, same rule as the markdown parser', () => {
+    const out = bodyToOutline('- Parent\n  - Child\n    - Grandchild');
+    expect(out.map((n) => n.text)).toEqual(['Parent']);
+    expect(out[0].children.map((n) => n.text)).toEqual(['Child']);
+    expect(out[0].children[0].children.map((n) => n.text)).toEqual(['Grandchild']);
+  });
+
+  it('recovers checkbox state from list lines', () => {
+    const out = bodyToOutline('- [ ] todo\n- [x] done');
+    expect(out.map((n) => n.checked)).toEqual([false, true]);
+  });
+
+  it('keeps a non-list line (heading, paragraph) as its own top-level bullet, content intact', () => {
+    const out = bodyToOutline('# Heading\nJust a paragraph');
+    expect(out.map((n) => n.text)).toEqual(['# Heading', 'Just a paragraph']);
+  });
+
+  it('round-trips through outlineToMarkdown for a nested tree', () => {
+    const original = '- Parent\n  - Child A\n  - Child B\n- Sibling';
+    const roundTripped = outlineToMarkdown(bodyToOutline(original));
+    expect(roundTripped).toBe(original);
   });
 });

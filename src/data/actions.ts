@@ -9,6 +9,7 @@ import { guessTerm, normalizeParse } from '@/core/syllabus/normalize';
 import { buildSampleSemester, SAMPLE_NOTES } from '@/core/syllabus/sample';
 import type { ParsedSyllabus } from '@/core/syllabus/types';
 import { routeNote, topicForDate } from '@/core/notes';
+import { bodyToOutline, emptyOutline } from '@/core/outline';
 import type { GeneratedItem } from '@/core/flashcards/pipeline';
 import { nextExamFor, nextReview, stateFromReviews, type ExamTarget } from '@/core/scheduling';
 import { localDateString, MS } from '@/core/time';
@@ -177,7 +178,7 @@ export function addSampleSemester(now: Date): Course[] {
     store.insert('notes', {
       id: newId(), user_id: store.userId, course_id: course.id, topic_id: topic?.id ?? null, parent_note_id: null,
       title: null, body: s.body, captured_via: 'in_app', course_inferred: false,
-      note_type: 'text', outline: null, created_at: at, updated_at: at,
+      outline: bodyToOutline(s.body), created_at: at, updated_at: at,
     });
   }
   return courses;
@@ -266,8 +267,7 @@ export function removeAbsence(a: Absence) {
 
 // ---------------------------------------------------------------- notes
 export function createNote(args: {
-  body: string; via?: string; explicitCourseId?: string | null; now?: Date;
-  noteType?: Note['note_type']; outline?: Note['outline'];
+  body: string; via?: string; explicitCourseId?: string | null; now?: Date; outline?: Note['outline'];
 }): Note {
   const now = args.now ?? new Date();
   const route = routeNote({
@@ -278,7 +278,7 @@ export function createNote(args: {
   const note: Note = {
     id: newId(), user_id: store.userId, course_id: route.course_id, topic_id: route.topic_id, parent_note_id: null,
     title: null, body: args.body, captured_via: args.via ?? 'in_app',
-    course_inferred: route.course_inferred, note_type: args.noteType ?? 'text', outline: args.outline ?? null,
+    course_inferred: route.course_inferred, outline: args.outline ?? bodyToOutline(args.body),
     created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
@@ -290,12 +290,12 @@ export function createSubNote(parent: Note, body = ''): Note {
   const note: Note = {
     id: newId(), user_id: store.userId, course_id: parent.course_id, topic_id: parent.topic_id, parent_note_id: parent.id,
     title: null, body, captured_via: 'in_app', course_inferred: false,
-    note_type: 'text', outline: null, created_at: at, updated_at: at,
+    outline: emptyOutline(), created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
 }
 
-export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body' | 'note_type' | 'outline'>>): Note {
+export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body' | 'outline'>>): Note {
   return store.update('notes', note, { ...patch, updated_at: nowIso() });
 }
 

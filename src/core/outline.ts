@@ -26,6 +26,45 @@ export function emptyOutline(): OutlineNode[] {
   return [newNode()];
 }
 
+const LIST_LINE = /^(\s*)([-*+])\s+(.*)$/;
+
+/**
+ * Converts a note's plain-text/markdown body into an outline tree, for notes that predate
+ * this editor (or were imported). List lines nest by indentation, same as outlineToMarkdown
+ * produces; anything else (a heading, a paragraph) becomes its own top-level bullet, content
+ * preserved as-is so nothing is lost — the user can re-indent from there.
+ */
+export function bodyToOutline(body: string): OutlineNode[] {
+  const lines = body.replace(/\r\n?/g, '\n').split('\n').filter((l) => l.trim() !== '');
+  if (lines.length === 0) return emptyOutline();
+
+  const roots: OutlineNode[] = [];
+  const stack: { depth: number; node: OutlineNode }[] = [];
+
+  for (const line of lines) {
+    const m = line.match(LIST_LINE);
+    let depth = 0;
+    let text = line.trim();
+    let checked: boolean | null = null;
+    if (m) {
+      depth = Math.floor(m[1].replace(/\t/g, '    ').length / 2);
+      text = m[3];
+      const t = text.match(/^\[( |x|X)\]\s+(.*)$/);
+      if (t) {
+        checked = t[1] !== ' ';
+        text = t[2];
+      }
+    }
+    const node: OutlineNode = { id: newNodeId(), text, checked, collapsed: false, children: [] };
+    while (stack.length > 0 && stack[stack.length - 1].depth >= depth) stack.pop();
+    const parent = stack[stack.length - 1];
+    if (parent) parent.node.children.push(node);
+    else roots.push(node);
+    stack.push({ depth, node });
+  }
+  return roots;
+}
+
 // ---------------------------------------------------------------- tree walking
 
 type Loc = { parent: OutlineNode[]; index: number; node: OutlineNode; ancestors: OutlineNode[] };
