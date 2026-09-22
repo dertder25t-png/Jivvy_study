@@ -13,6 +13,7 @@
     "build:web": "expo export --platform web",
     "serve:web": "npx --yes serve dist -s -l 8081",
     "icons": "node scripts/make-icons.mjs",
+    "check:supabase": "node scripts/check-supabase.mjs",
     "backend:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-backend.ps1"
   },
   "dependencies": {

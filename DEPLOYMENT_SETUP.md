@@ -7,8 +7,13 @@
 ## What's Configured
 
 ### Local Development (`.env` & `.env.local`)
-- ✅ Supabase URL: `https://yvsqppvjxsppzabjmful.supabase.co`
-- ✅ Supabase Anon Key: Set
+- ✅ Supabase URL: set — copy from Supabase dashboard → Settings → API → Project URL
+- ✅ Supabase Anon Key: set — copy from the same page
+
+> Copy both values; never retype them. The project ref in the URL must match the
+> `ref` claim inside the anon key JWT, and a single transposed character makes the
+> hostname fail DNS — which the app reports as "Can't reach the server."
+> Verify with: `npm run check:supabase`
 - ✅ Vercel linked via CLI (`vercel link`)
 
 **These files are in `.gitignore` — never committed to GitHub.**
