@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { countWords } from '@/core/markdown';
+import { emptyOutline, outlineToMarkdown, type OutlineNode } from '@/core/outline';
 import { createNote, createSubNote, deleteNote, fileNote, saveNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { prefs, usePrefs } from '@/data/prefs';
@@ -15,6 +16,7 @@ import { BODY_LINE, BODY_SIZE, Markdown } from '@/ui/Markdown';
 import { NoteCardsPanel, PANEL_WIDTH } from '@/ui/NoteCardsPanel';
 import { NoteToolbar } from '@/ui/NoteToolbar';
 import { NotePreview } from '@/ui/NotePreview';
+import { OutlineEditor } from '@/ui/OutlineEditor';
 import { space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 import { useSafeBack } from '@/ui/nav';
@@ -63,7 +65,7 @@ function IconBtn({
  * The flashcard panel lives on the left and slides in and out.
  */
 export default function NoteEditor() {
-  const { id, courseId } = useLocalSearchParams<{ id: string; courseId?: string }>();
+  const { id, courseId, type } = useLocalSearchParams<{ id: string; courseId?: string; type?: string }>();
   const c = useColors();
   const router = useRouter();
   const sem = useSemester();
@@ -79,16 +81,25 @@ export default function NoteEditor() {
   const deleted = useRef(false);
   const noteId = created.current?.id ?? (isNew ? null : id);
   const note = noteId ? sem.rows.notes.find((n) => n.id === noteId) ?? null : null;
+  const isOutline = existing ? existing.note_type === 'outline' : type === 'outline';
 
   const [title, setTitle] = useState(existing?.title ?? '');
   const [body, setBody] = useState(existing?.body ?? '');
+  const [outline, setOutline] = useState<OutlineNode[]>(existing?.outline ?? emptyOutline());
+  const outlineDirty = useRef(false);
   const [mode, setMode] = useState<'write' | 'read'>(isNew || !existing?.body.trim() ? 'write' : 'read');
   const [menuOpen, setMenuOpen] = useState(false);
   const [showPreview, setShowPreview] = useState(!wide); // on mobile, start with editor only
-  const latest = useRef({ title, body });
-  latest.current = { title, body };
+  const latest = useRef({ title, body, outline });
+  latest.current = { title, body, outline };
   const bodyRef = useRef<TextInput>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onOutlineChange = (next: OutlineNode[]) => {
+    outlineDirty.current = true;
+    setOutline(next);
+    setBody(outlineToMarkdown(next));
+  };
 
   // Helper to insert markdown (inserts before selection or at end)
   const insertMarkdown = (before: string, after: string = '') => {
@@ -113,15 +124,22 @@ export default function NoteEditor() {
   /** Writes the current text (creating the note on first real content) and returns the stored note. */
   const persist = (): Note | null => {
     if (deleted.current) return null;
-    const { title: t, body: b } = latest.current;
+    const { title: t, body: b, outline: o } = latest.current;
     const cur = findNote();
     if (cur) {
-      if (cur.body !== b || (cur.title ?? '') !== t.trim()) saveNote(cur, { title: t.trim() || null, body: b });
+      if (cur.body !== b || (cur.title ?? '') !== t.trim() || (isOutline && outlineDirty.current)) {
+        saveNote(cur, { title: t.trim() || null, body: b, ...(isOutline ? { note_type: 'outline' as const, outline: o } : {}) });
+        outlineDirty.current = false;
+      }
       return findNote();
     }
     if (!b.trim() && !t.trim()) return null;
-    const n = createNote({ body: b, via: 'in_app', explicitCourseId: courseId ?? null });
+    const n = createNote({
+      body: b, via: 'in_app', explicitCourseId: courseId ?? null,
+      noteType: isOutline ? 'outline' : 'text', outline: isOutline ? o : null,
+    });
     created.current = n;
+    outlineDirty.current = false;
     if (t.trim()) saveNote(n, { title: t.trim() });
     return findNote();
   };
@@ -154,7 +172,7 @@ export default function NoteEditor() {
       if (timer.current) clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, body]);
+  }, [title, body, outline]);
 
   useEffect(() => () => leave(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -238,7 +256,9 @@ export default function NoteEditor() {
 
   const pendingCount = note ? sem.rows.cards.filter((k) => k.source_note_id === note.id && k.status === 'pending').length : 0;
   const words = countWords(body);
-  const dirty = note ? note.body !== body || (note.title ?? '') !== title.trim() : body.trim() !== '' || title.trim() !== '';
+  const dirty = note
+    ? note.body !== body || (note.title ?? '') !== title.trim() || (isOutline && outlineDirty.current)
+    : body.trim() !== '' || title.trim() !== '';
 
   // ---------------------------------------------------------------- page
   const column = { flex: 1, width: '100%' as const, maxWidth: COLUMN, paddingHorizontal: 24 };
@@ -255,10 +275,12 @@ export default function NoteEditor() {
         {subNoteQuickAddEnabled && note ? (
           <IconBtn icon="add-outline" label="Add sub-note" onPress={addSubNote} badge={subNoteCount || undefined} />
         ) : null}
-        {mode === 'write' && !wide ? (
+        {!isOutline && mode === 'write' && !wide ? (
           <IconBtn icon={showPreview ? 'create-outline' : 'eye-outline'} label={showPreview ? 'Editor' : 'Preview'} onPress={() => setShowPreview((v) => !v)} active={showPreview} />
         ) : null}
-        <IconBtn icon={mode === 'write' ? 'book-outline' : 'create-outline'} label={mode === 'write' ? 'Reading view' : 'Edit'} onPress={toggleMode} />
+        {!isOutline ? (
+          <IconBtn icon={mode === 'write' ? 'book-outline' : 'create-outline'} label={mode === 'write' ? 'Reading view' : 'Edit'} onPress={toggleMode} />
+        ) : null}
         <IconBtn icon="ellipsis-vertical" label="More" onPress={() => setMenuOpen((v) => !v)} active={menuOpen} />
       </View>
 
@@ -283,7 +305,31 @@ export default function NoteEditor() {
 
       {/* the page */}
       <View style={{ flex: 1 }}>
-        {mode === 'write' ? (
+        {isOutline ? (
+          <ScrollView style={{ width: '100%' }} contentContainerStyle={{ alignItems: 'center', paddingBottom: 120, flexGrow: 1 }}>
+            <View style={column}>
+              {parentNote ? (
+                <Pressable onPress={() => { leave(); router.push(`/note/${parentNote.id}`); }} accessibilityRole="button" style={{ paddingTop: 10 }}>
+                  <T variant="small" color={c.primary}>↑ {parentNote.title || 'Back to parent note'}</T>
+                </Pressable>
+              ) : null}
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                placeholder="Untitled"
+                placeholderTextColor={c.muted}
+                returnKeyType="next"
+                blurOnSubmit={false}
+                onKeyPress={onKeyPressSubNote}
+                style={{
+                  color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
+                  borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
+                }}
+              />
+              <OutlineEditor nodes={outline} onChange={onOutlineChange} autoFocus={isNew} />
+            </View>
+          </ScrollView>
+        ) : mode === 'write' ? (
           <View style={{ flex: 1, flexDirection: wide ? 'row' : 'column' }}>
             {/* Editor column (left on desktop, full width on mobile unless showing preview) */}
             {(!showPreview || wide) && (

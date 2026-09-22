@@ -13,7 +13,7 @@ import { radius, space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 
 function preview(n: Note): string {
-  const first = n.body.trim().split('\n').find((l) => l.trim()) ?? '';
+  const first = (n.body.trim().split('\n').find((l) => l.trim()) ?? '').replace(/^\s*-\s*(\[[ xX]\]\s*)?/, '');
   return (n.title || first).replace(/[#*_`]/g, '').slice(0, 90) || 'Empty note';
 }
 
@@ -84,7 +84,10 @@ export default function Notes() {
             accessibilityRole="button"
             style={{ flex: 1, paddingVertical: space.sm, paddingRight: space.sm, gap: 2 }}
           >
-            <T variant="body" style={{ fontWeight: '600' }} numberOfLines={2}>{preview(n)}</T>
+            <Row gap={4}>
+              {n.note_type === 'outline' ? <Ionicons name="list-outline" size={14} color={c.muted} /> : null}
+              <T variant="body" style={{ fontWeight: '600', flexShrink: 1 }} numberOfLines={2}>{preview(n)}</T>
+            </Row>
             <Row gap={6}>
               <Dot color={course?.color ?? '#999'} size={8} />
               <T variant="small" muted numberOfLines={1}>
@@ -115,6 +118,7 @@ export default function Notes() {
     <Screen>
       <Row gap={8}>
         <Button title="New note" onPress={() => router.push('/note/new')} style={{ flex: 1 }} />
+        <Button title="New outline" variant="ghost" onPress={() => router.push('/note/new?type=outline')} style={{ flex: 1 }} />
         <Button title="Import" variant="ghost" onPress={() => router.push('/import')} style={{ flex: 1 }} />
       </Row>
 
@@ -130,7 +134,10 @@ export default function Notes() {
                 <Card key={n.id}>
                   {/* the text opens the note; the chips below are separate buttons (buttons can't nest) */}
                   <Pressable onPress={() => router.push(`/note/${n.id}`)} accessibilityRole="button" style={{ gap: 4 }}>
-                    <T variant="body" numberOfLines={2}>{preview(n)}</T>
+                    <Row gap={4}>
+                      {n.note_type === 'outline' ? <Ionicons name="list-outline" size={14} color={c.muted} /> : null}
+                      <T variant="body" numberOfLines={2} style={{ flexShrink: 1 }}>{preview(n)}</T>
+                    </Row>
                     <T variant="small" muted>{relativeTime(n.created_at, sem.now, sem.tz)} · {guess ? `Looks like ${guess.code ?? guess.name}?` : 'Which class is this for?'}</T>
                   </Pressable>
                   <Row style={{ flexWrap: 'wrap' }}>

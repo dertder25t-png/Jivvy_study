@@ -100,7 +100,7 @@ export function NoteToolbar({ onInsertMarkdown }: NoteToolbarProps) {
     {
       icon: 'list',
       label: 'Bullet List',
-      onPress: () => onInsertMarkdown('• ', '\n'),
+      onPress: () => onInsertMarkdown('- ', '\n'),
       group: 'list',
     },
     {
