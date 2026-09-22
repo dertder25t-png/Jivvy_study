@@ -154,24 +154,19 @@ export default function ImportScreen() {
   };
 
   const importCards = async () => {
-    if (cards.length === 0) return;
+    if (cards.length === 0 || !sourceNoteTitle.trim()) return;
 
     try {
       setLoading(true);
 
-      // Create source note if title provided
-      let sourceNoteId: string | null = null;
-      if (sourceNoteTitle.trim()) {
-        const sourceNote = createNote({
-          body: 'Imported flashcards',
-          via: 'import',
-          explicitCourseId: courseId,
-        });
-        if (sourceNote) {
-          saveNote(sourceNote, { title: sourceNoteTitle });
-          sourceNoteId = sourceNote.id;
-        }
-      }
+      // Every import becomes a named set, so it stays a group in the deck instead of loose cards.
+      const sourceNote = createNote({
+        body: 'Imported flashcards',
+        via: 'import',
+        explicitCourseId: courseId,
+      });
+      saveNote(sourceNote, { title: sourceNoteTitle.trim() });
+      const sourceNoteId = sourceNote.id;
 
       for (const card of cards) {
         addManualCard({ course_id: courseId, term: card.term, definition: card.definition, source_note_id: sourceNoteId });
@@ -283,7 +278,8 @@ export default function ImportScreen() {
             <View style={{ gap: 12 }}>
               <T muted variant="small">
                 Paste straight from Quizlet, or upload a CSV, TSV, JSON, or TXT file. Cards don't need a
-                class — file them under one now, or leave them loose and add that later.
+                class — file them under one now, or leave them loose and add that later. Every import
+                gets a set name so it stays a group in your deck.
               </T>
 
               <Row gap={8}>
@@ -389,7 +385,7 @@ export default function ImportScreen() {
                     </View>
 
                     <Field
-                      label="Source note (optional)"
+                      label="Set title"
                       placeholder="e.g., Biology 101 - Chapter 5"
                       value={sourceNoteTitle}
                       onChangeText={setSourceNoteTitle}
@@ -398,7 +394,7 @@ export default function ImportScreen() {
                     <Button
                       title={`Import ${cards.length} Card(s)`}
                       onPress={importCards}
-                      disabled={loading}
+                      disabled={loading || !sourceNoteTitle.trim()}
                     />
                   </View>
                 </>

@@ -358,6 +358,11 @@ export function addManualCard(args: {
   });
 }
 
+/** Correcting a card you already kept — unlike `decideCard`, this doesn't touch status or eval history. */
+export function updateCard(card: Card, patch: { term: string; definition: string }): Card {
+  return store.update('cards', card, { term: patch.term.trim(), definition: patch.definition.trim() });
+}
+
 export function deleteCard(card: Card) {
   store.remove('cards', card);
   store.purgeLocal('card_reviews', (r) => r.card_id === card.id);
