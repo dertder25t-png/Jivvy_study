@@ -142,7 +142,7 @@ export function coerceParsed(input: unknown): ParsedSyllabus {
       .filter((q) => q && typeof q.title === 'string')
       .map((q) => ({
         title: q.title,
-        type: (['online', 'paper', 'in_class', 'other'] as const).includes(q.type) ? q.type : null,
+        type: q.type != null && (['online', 'paper', 'in_class', 'other'] as const).includes(q.type) ? q.type : null,
         frequency: q.frequency ?? null,
         due_date: q.due_date ?? null,
         due_time: q.due_time ?? null,

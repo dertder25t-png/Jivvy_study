@@ -51,8 +51,8 @@ export async function clearLocalData() {
 // ---------------------------------------------------------------------------
 const TABLES: TableName[] = [
   'terms', 'courses', 'syllabi', 'grade_components', 'assignments', 'exams', 'exam_coverage',
-  'course_policies', 'absences', 'topics', 'notes', 'cards', 'card_reviews', 'generation_events',
-  'waiting_on', 'metric_events',
+  'quizzes', 'quiz_coverage', 'course_policies', 'absences', 'topics', 'notes', 'cards', 'card_reviews',
+  'questions', 'generation_events', 'waiting_on', 'metric_events',
 ];
 
 // Big text columns we don't need to pull on every launch.

@@ -130,6 +130,7 @@ export interface Quiz {
   due_at: ISODateTime | null;
   due_is_approximate: boolean;
   points_possible: number | null;
+  created_at: ISODateTime;
 }
 
 export interface QuizCoverage {

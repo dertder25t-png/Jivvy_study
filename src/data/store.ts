@@ -9,13 +9,13 @@ export type Rows = { [K in TableName]: Tables[K][] };
 
 export const EMPTY_ROWS = (): Rows => ({
   terms: [], courses: [], syllabi: [], grade_components: [], assignments: [], exams: [],
-  exam_coverage: [], course_policies: [], absences: [], topics: [], notes: [], cards: [],
-  card_reviews: [], generation_events: [], waiting_on: [], metric_events: [],
+  exam_coverage: [], quizzes: [], quiz_coverage: [], course_policies: [], absences: [], topics: [], notes: [], cards: [],
+  card_reviews: [], questions: [], generation_events: [], waiting_on: [], metric_events: [],
 });
 
 /** Tables whose rows carry a user_id column. */
 export const USER_TABLES = new Set<TableName>([
-  'terms', 'courses', 'notes', 'cards', 'generation_events', 'waiting_on', 'metric_events',
+  'terms', 'courses', 'notes', 'cards', 'questions', 'generation_events', 'waiting_on', 'metric_events',
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

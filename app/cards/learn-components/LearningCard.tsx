@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
-import { Button, Card, Row, Screen, T } from '@/ui/components';
+import { Button, Card, Empty, Row, Screen, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
 import type { Card as CardType } from '@/types/db';
 import type { LearnSession } from '@/core/learning';
@@ -25,7 +25,7 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
   const [hiddenText, setHiddenText] = useState('');
   const [showReveal, setShowReveal] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(4);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hiddenInputRef = useRef<TextInput>(null);
 
   const pocket = session.cardIds.slice(0, session.pocketSize);
@@ -57,7 +57,7 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
   }, [phase, currentCard]);
 
   if (!currentCard) {
-    return <Screen />;
+    return <Screen><Empty title="No card to show" /></Screen>;
   }
 
   const handleManualHide = () => {

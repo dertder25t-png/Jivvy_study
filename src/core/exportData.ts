@@ -7,7 +7,8 @@ export type RowsLike = Partial<Record<TableName, Array<Record<string, unknown>>>
 /** Parents before children, so every foreign key resolves as rows are inserted. */
 export const IMPORT_ORDER: TableName[] = [
   'terms', 'courses', 'syllabi', 'grade_components', 'assignments', 'topics', 'exams', 'exam_coverage',
-  'course_policies', 'absences', 'notes', 'cards', 'card_reviews', 'generation_events', 'waiting_on', 'metric_events',
+  'quizzes', 'quiz_coverage', 'course_policies', 'absences', 'notes', 'cards', 'card_reviews',
+  'questions', 'generation_events', 'waiting_on', 'metric_events',
 ];
 
 /** table → [column, parent table] for the relationships that would otherwise fail on insert. */
@@ -20,11 +21,14 @@ const FKS: Partial<Record<TableName, Array<[string, TableName, boolean]>>> = {
   topics: [['course_id', 'courses', false]],
   exams: [['course_id', 'courses', false], ['assignment_id', 'assignments', true]],
   exam_coverage: [['exam_id', 'exams', false], ['topic_id', 'topics', false]],
+  quizzes: [['course_id', 'courses', false], ['assignment_id', 'assignments', true]],
+  quiz_coverage: [['quiz_id', 'quizzes', false], ['topic_id', 'topics', false]],
   course_policies: [['course_id', 'courses', false]],
   absences: [['course_id', 'courses', false]],
   notes: [['course_id', 'courses', true], ['topic_id', 'topics', true], ['parent_note_id', 'notes', true]],
   cards: [['course_id', 'courses', true], ['topic_id', 'topics', true], ['source_note_id', 'notes', true]],
   card_reviews: [['card_id', 'cards', false]],
+  questions: [['course_id', 'courses', false], ['topic_id', 'topics', true], ['quiz_id', 'quizzes', true], ['source_note_id', 'notes', true]],
   generation_events: [['card_id', 'cards', true], ['source_note_id', 'notes', true]],
   waiting_on: [['course_id', 'courses', true]],
 };
@@ -57,6 +61,7 @@ export function exportFileName(now: Date): string {
 
 function keyOf(table: TableName, row: Record<string, unknown>): string {
   if (table === 'exam_coverage') return `${row.exam_id}:${row.topic_id}`;
+  if (table === 'quiz_coverage') return `${row.quiz_id}:${row.topic_id}`;
   return String(row[PK[table] ?? 'id']);
 }
 

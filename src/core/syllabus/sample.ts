@@ -107,6 +107,8 @@ export function buildSampleSemester(now: Date, tz: string): SampleSemester {
       { title: 'Midterm 2', date: d(12, 4), time: '09:30', is_cumulative: false, location: 'Hall 210', covers_weeks: [8, 9, 10, 11], covers_topics: [] },
       { title: 'Final exam', date: d(16, 4), time: '10:00', is_cumulative: true, location: 'Hall 210', covers_weeks: [], covers_topics: [] },
     ],
+    quizzes: [],
+    test_info: { formats: [], preparation_notes: null, retake_policy: null },
     topics: psychTopics.map((title, i) => ({
       week_no: i + 1,
       starts_on: d(i + 1, 1),
@@ -197,6 +199,8 @@ export function buildSampleSemester(now: Date, tz: string): SampleSemester {
       'Human impact',
       'Final review',
     ].map((title, i) => ({ week_no: i + 1, starts_on: d(i + 1, 1), title, readings: null })),
+    quizzes: [],
+    test_info: { formats: [], preparation_notes: null, retake_policy: null },
     policies: {
       late: { accepted: true, window_hours: 48, penalty_per_day: 0.2, notes: null },
       attendance: { allowed_absences: null, penalty: null },

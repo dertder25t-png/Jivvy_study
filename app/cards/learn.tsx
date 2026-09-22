@@ -132,5 +132,9 @@ export default function LearnMode() {
     );
   }
 
-  return <Screen />;
+  return (
+    <Screen>
+      <Empty title="Something went wrong" body="Go back and try again." action={<Button title="Back" onPress={() => router.back()} />} />
+    </Screen>
+  );
 }
