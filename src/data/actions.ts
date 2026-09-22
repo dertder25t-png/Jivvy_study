@@ -175,7 +175,7 @@ export function addSampleSemester(now: Date): Course[] {
     const topic = topics.find((t) => t.course_id === course.id && s.topic.test(t.title));
     const at = nowIso();
     store.insert('notes', {
-      id: newId(), user_id: store.userId, course_id: course.id, topic_id: topic?.id ?? null,
+      id: newId(), user_id: store.userId, course_id: course.id, topic_id: topic?.id ?? null, parent_note_id: null,
       title: null, body: s.body, captured_via: 'in_app', course_inferred: false, created_at: at, updated_at: at,
     });
   }
@@ -272,9 +272,19 @@ export function createNote(args: { body: string; via?: string; explicitCourseId?
   });
   const at = now.toISOString();
   const note: Note = {
-    id: newId(), user_id: store.userId, course_id: route.course_id, topic_id: route.topic_id,
+    id: newId(), user_id: store.userId, course_id: route.course_id, topic_id: route.topic_id, parent_note_id: null,
     title: null, body: args.body, captured_via: args.via ?? 'in_app',
     course_inferred: route.course_inferred, created_at: at, updated_at: at,
+  };
+  return store.insert('notes', note);
+}
+
+/** A note nested under another. Fully inherits the parent's filing — no routing/confirmation step. */
+export function createSubNote(parent: Note, body = ''): Note {
+  const at = nowIso();
+  const note: Note = {
+    id: newId(), user_id: store.userId, course_id: parent.course_id, topic_id: parent.topic_id, parent_note_id: parent.id,
+    title: null, body, captured_via: 'in_app', course_inferred: false, created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
 }
@@ -290,7 +300,9 @@ export function fileNote(note: Note, courseId: string | null): Note {
   return store.update('notes', note, { course_id: courseId, topic_id: topic?.id ?? null, course_inferred: false });
 }
 
+/** Deleting a note promotes its sub-notes to top-level rather than taking them down too. */
 export function deleteNote(note: Note) {
+  store.patchLocal('notes', (n) => n.parent_note_id === note.id, { parent_note_id: null });
   store.remove('notes', note);
 }
 

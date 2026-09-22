@@ -6,7 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { countWords } from '@/core/markdown';
-import { createNote, deleteNote, fileNote, saveNote } from '@/data/actions';
+import { createNote, createSubNote, deleteNote, fileNote, saveNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { prefs, usePrefs } from '@/data/prefs';
 import { store } from '@/data/store';
@@ -70,7 +70,7 @@ export default function NoteEditor() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const wide = width >= WIDE;
-  const { notePanelOpen } = usePrefs();
+  const { notePanelOpen, subNoteQuickAddEnabled, subNoteShortcutKey } = usePrefs();
   const panelOpen = notePanelOpen ?? wide;
 
   const isNew = id === 'new';
@@ -194,6 +194,23 @@ export default function NoteEditor() {
     <NoteCardsPanel note={note} body={body} ensureSaved={persist} onClose={() => setPanel(false)} />
   ) : null;
 
+  // ---------------------------------------------------------------- sub-notes
+  const parentNote = note?.parent_note_id ? sem.rows.notes.find((n) => n.id === note.parent_note_id) ?? null : null;
+  const subNoteCount = note ? sem.rows.notes.filter((n) => n.parent_note_id === note.id).length : 0;
+
+  const addSubNote = () => {
+    const saved = persist();
+    if (!saved) return;
+    const sub = createSubNote(saved);
+    router.push(`/note/${sub.id}`);
+  };
+
+  const onKeyPressSubNote = (e: { nativeEvent: { key: string }; preventDefault?: () => void }) => {
+    if (!subNoteShortcutKey || e.nativeEvent?.key !== subNoteShortcutKey) return;
+    e.preventDefault?.();
+    addSubNote();
+  };
+
   // ---------------------------------------------------------------- filing / delete
   const course = note?.course_id ? sem.courseById.get(note.course_id) : undefined;
   const topic = note?.topic_id ? sem.rows.topics.find((t) => t.id === note.topic_id) : undefined;
@@ -235,6 +252,9 @@ export default function NoteEditor() {
         <Pressable onPress={() => setMenuOpen((v) => !v)} style={{ flex: 1, minWidth: 0, overflow: 'hidden', alignItems: 'center', paddingHorizontal: 6 }} accessibilityRole="button" accessibilityLabel="Where this note is filed">
           <T variant="small" muted numberOfLines={1} ellipsizeMode="head" style={{ maxWidth: '100%' }}>{crumb}</T>
         </Pressable>
+        {subNoteQuickAddEnabled && note ? (
+          <IconBtn icon="add-outline" label="Add sub-note" onPress={addSubNote} badge={subNoteCount || undefined} />
+        ) : null}
         {mode === 'write' && !wide ? (
           <IconBtn icon={showPreview ? 'create-outline' : 'eye-outline'} label={showPreview ? 'Editor' : 'Preview'} onPress={() => setShowPreview((v) => !v)} active={showPreview} />
         ) : null}
@@ -277,6 +297,11 @@ export default function NoteEditor() {
                 {/* Editor */}
                 <View style={{ flex: 1, alignItems: 'center' }}>
                   <View style={column}>
+                    {parentNote ? (
+                      <Pressable onPress={() => { leave(); router.push(`/note/${parentNote.id}`); }} accessibilityRole="button" style={{ paddingTop: 10 }}>
+                        <T variant="small" color={c.primary}>↑ {parentNote.title || 'Back to parent note'}</T>
+                      </Pressable>
+                    ) : null}
                     <TextInput
                       value={title}
                       onChangeText={setTitle}
@@ -285,6 +310,7 @@ export default function NoteEditor() {
                       returnKeyType="next"
                       blurOnSubmit={false}
                       onSubmitEditing={() => bodyRef.current?.focus()}
+                      onKeyPress={onKeyPressSubNote}
                       style={{
                         color: c.text, fontSize: 34, fontWeight: '700', letterSpacing: -0.5, paddingVertical: 14, paddingHorizontal: 0,
                         borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
@@ -298,6 +324,7 @@ export default function NoteEditor() {
                       autoFocus={isNew}
                       placeholder="Start writing…"
                       placeholderTextColor={c.muted}
+                      onKeyPress={onKeyPressSubNote}
                       style={{
                         flex: 1, color: c.text, fontSize: BODY_SIZE, lineHeight: BODY_LINE, textAlignVertical: 'top',
                         paddingTop: 4, paddingBottom: 90, paddingHorizontal: 0, borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,

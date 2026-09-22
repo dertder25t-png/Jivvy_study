@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Alert, Platform, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
 import { clearLocalData } from '@/data/backends';
@@ -12,12 +12,29 @@ import { Button, Card, Chip, Field, Row, Screen, Section, T } from '@/ui/compone
 
 const MINUTES = [45, 90, 120, 180];
 
+function keyLabel(key: string): string {
+  if (key === ' ') return 'Space';
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
 export default function Settings() {
   const p = usePrefs();
   const sem = useSemester();
   const router = useRouter();
   const [tz, setTz] = useState(p.tz);
   const [msg, setMsg] = useState<string | null>(null);
+  const [capturingShortcut, setCapturingShortcut] = useState(false);
+
+  useEffect(() => {
+    if (!capturingShortcut || Platform.OS !== 'web') return;
+    const handler = (e: KeyboardEvent) => {
+      e.preventDefault();
+      prefs.set({ subNoteShortcutKey: e.key });
+      setCapturingShortcut(false);
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [capturingShortcut]);
 
   const toggleNotifications = async (on: boolean) => {
     if (on) {
@@ -71,6 +88,32 @@ export default function Settings() {
           </T>
           {Platform.OS === 'web' ? <T variant="small" muted>Reminders work in the phone app, not the web preview.</T> : null}
           <T variant="small">{sem.notifications.length} planned over the next two weeks.</T>
+        </Card>
+      </Section>
+
+      <Section title="Notes">
+        <Card>
+          <Row style={{ justifyContent: 'space-between' }}>
+            <T style={{ flex: 1 }}>Quick-add "+" for sub-notes</T>
+            <Switch value={p.subNoteQuickAddEnabled} onValueChange={(v) => prefs.set({ subNoteQuickAddEnabled: v })} />
+          </Row>
+          <T variant="small" muted>Shows a small + next to any note (in the list and while writing it) to spin off a sub-note under it.</T>
+
+          {Platform.OS === 'web' ? (
+            <>
+              <Row style={{ justifyContent: 'space-between' }}>
+                <T style={{ flex: 1 }}>Keyboard shortcut</T>
+                <T variant="small" muted>{p.subNoteShortcutKey ? keyLabel(p.subNoteShortcutKey) : 'Off'}</T>
+              </Row>
+              <Row gap={8}>
+                <Button title={capturingShortcut ? 'Press any key…' : 'Change shortcut'} small variant="secondary" onPress={() => setCapturingShortcut(true)} />
+                {p.subNoteShortcutKey ? <Button title="Turn off" small variant="ghost" onPress={() => prefs.set({ subNoteShortcutKey: null })} /> : null}
+              </Row>
+              <T variant="small" muted>While writing a note, this key creates a new sub-note under it. Default is Tab.</T>
+            </>
+          ) : (
+            <T variant="small" muted>The keyboard shortcut is available in the web app.</T>
+          )}
         </Card>
       </Section>
 

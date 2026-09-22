@@ -16,6 +16,10 @@ export interface Prefs {
   localImport: 'pending' | 'done' | 'skipped';
   /** Last time the app was opened, as of the *previous* session. Drives the comeback screen. */
   lastOpenedAt: string | null;
+  /** Show the small "+" quick-add-sub-note button in Notes and the note editor. */
+  subNoteQuickAddEnabled: boolean;
+  /** Keyboard shortcut (web) that creates a sub-note while editing one. null = off. */
+  subNoteShortcutKey: string | null;
 }
 
 const KEY = 'studyapp.prefs.v1';
@@ -29,6 +33,8 @@ const DEFAULTS = (): Prefs => ({
   guest: false,
   localImport: 'pending',
   lastOpenedAt: null,
+  subNoteQuickAddEnabled: true,
+  subNoteShortcutKey: 'Tab',
 });
 
 let current: Prefs = DEFAULTS();

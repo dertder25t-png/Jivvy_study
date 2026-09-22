@@ -179,6 +179,8 @@ export interface Note {
   user_id: string;
   course_id: string | null;
   topic_id: string | null;
+  /** null for a top-level note; otherwise the note this one is nested under. */
+  parent_note_id: string | null;
   title: string | null;
   body: string;
   captured_via: 'widget' | 'voice' | 'share' | 'in_app' | string;
