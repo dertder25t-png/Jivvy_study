@@ -28,7 +28,7 @@ The environment variables are set in `.env.local` but NOT in Vercel's deployment
 5. Add these two variables:
    ```
    Name: EXPO_PUBLIC_SUPABASE_URL
-   Value: https://yvsqppvjxspppzabjmful.supabase.co
+   Value: https://yvsqppvjxsppzabjmful.supabase.co
    ```
 
    ```
@@ -56,7 +56,7 @@ If Solution 1 didn't work, check Supabase settings:
 1. Go to Supabase Dashboard
    - URL: https://supabase.com
 
-2. Select your project "yvsqppvjxspppzabjmful"
+2. Select your project "yvsqppvjxsppzabjmful"
 
 3. Go to Settings → Authentication
 
@@ -137,7 +137,7 @@ console.log(result);
 - [ ] Environment variables added to Vercel
 - [ ] Project redeployed after adding env vars
 - [ ] Supabase Auth redirect URLs configured
-- [ ] Can reach https://yvsqppvjxspppzabjmful.supabase.co in browser
+- [ ] Can reach https://yvsqppvjxsppzabjmful.supabase.co in browser
 - [ ] Network requests show 200 status (not 403/404)
 - [ ] Tried signing up with new account
 - [ ] Tried signing in with existing account
@@ -161,7 +161,7 @@ Should show the values, not `undefined`.
 
 Visit this URL in your browser to test Supabase:
 ```
-https://yvsqppvjxspppzabjmful.supabase.co/rest/v1/
+https://yvsqppvjxsppzabjmful.supabase.co/rest/v1/
 ```
 
 Should return JSON (not "Can't reach server").

@@ -56,7 +56,7 @@ This is where most deployments fail. On the same "Configure" page:
 2. Click to expand
 3. Add first variable:
    - Name: `EXPO_PUBLIC_SUPABASE_URL`
-   - Value: `https://yvsqppvjxspppzabjmful.supabase.co`
+   - Value: `https://yvsqppvjxsppzabjmful.supabase.co`
    - Click "Add"
 
 4. Add second variable:

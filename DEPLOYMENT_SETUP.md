@@ -7,7 +7,7 @@
 ## What's Configured
 
 ### Local Development (`.env` & `.env.local`)
-- ✅ Supabase URL: `https://yvsqppvjxspppzabjmful.supabase.co`
+- ✅ Supabase URL: `https://yvsqppvjxsppzabjmful.supabase.co`
 - ✅ Supabase Anon Key: Set
 - ✅ Vercel linked via CLI (`vercel link`)
 
