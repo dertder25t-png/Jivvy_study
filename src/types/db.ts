@@ -193,7 +193,8 @@ export type CardStatus = 'pending' | 'accepted' | 'rejected' | 'edited';
 export interface Card {
   id: string;
   user_id: string;
-  course_id: string;
+  /** null when the card isn't filed under any class — flashcards work standalone. */
+  course_id: string | null;
   topic_id: string | null;
   term: string;
   definition: string;

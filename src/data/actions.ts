@@ -221,7 +221,7 @@ export function deleteCourse(courseId: string) {
   store.purgeLocal('exam_coverage', (r) => examIds.has(r.exam_id));
   store.purgeLocal('card_reviews', (r) => cardIds.has(r.card_id));
   for (const t of ['syllabi', 'grade_components', 'assignments', 'exams', 'course_policies', 'absences', 'topics', 'cards'] as const) {
-    store.purgeLocal(t, (r: { course_id: string }) => r.course_id === courseId);
+    store.purgeLocal(t, (r: { course_id: string | null }) => r.course_id === courseId);
   }
   store.patchLocal('notes', (n) => n.course_id === courseId, { course_id: null, topic_id: null });
   store.patchLocal('waiting_on', (w) => w.course_id === courseId, { course_id: null });
@@ -304,7 +304,7 @@ export function saveGeneratedBatch(note: Note, items: GeneratedItem[]): { cards:
 
   for (const it of items) {
     let cardId: string | null = null;
-    if (it.card && !it.rejectedBy && note.course_id) {
+    if (it.card && !it.rejectedBy) {
       cardId = newId();
       cards.push({
         id: cardId, user_id: store.userId, course_id: note.course_id, topic_id: note.topic_id,
@@ -341,16 +341,17 @@ export function decideCard(card: Card, decision: 'accepted' | 'rejected' | 'edit
 }
 
 export function addManualCard(args: {
-  course_id: string;
+  course_id?: string | null;
   topic_id?: string | null;
   source_note_id?: string | null;
   term: string;
   definition: string;
 }): Card {
-  const topics = store.all('topics').filter((t) => t.course_id === args.course_id);
+  const courseId = args.course_id ?? null;
+  const topics = courseId ? store.all('topics').filter((t) => t.course_id === courseId) : [];
   const topic = args.topic_id ?? topicForDate(topics, localDateString(new Date(), prefs.get().tz))?.id ?? null;
   return store.insert('cards', {
-    id: newId(), user_id: store.userId, course_id: args.course_id, topic_id: topic,
+    id: newId(), user_id: store.userId, course_id: courseId, topic_id: topic,
     term: args.term.trim(), definition: args.definition.trim(), card_type: 'term_def', cloze_text: null,
     origin: 'manual', status: 'accepted', source_note_id: args.source_note_id ?? null, source_span_start: null,
     source_span_end: null, created_at: nowIso(),

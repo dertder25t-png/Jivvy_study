@@ -18,29 +18,33 @@ export default function Deck() {
     );
   }
 
+  const unsorted = cards.filter((k) => !k.course_id);
+
+  const renderGroup = (key: string, title: string, list: typeof cards, accent?: string) => {
+    if (list.length === 0) return null;
+    const pending = list.filter((k) => k.status === 'pending').length;
+    return (
+      <Section key={key} title={`${title} · ${list.length - pending}${pending ? ` (+${pending} waiting)` : ''}`}>
+        <View style={{ gap: 8 }}>
+          {list.filter((k) => k.status !== 'pending').map((k) => (
+            <Card key={k.id} accent={accent}>
+              <Row style={{ justifyContent: 'space-between' }}>
+                <T variant="body" style={{ fontWeight: '600', flex: 1 }}>{k.term}</T>
+                {k.origin === 'generated' ? <Badge label="from notes" /> : <Badge label="manual" />}
+              </Row>
+              <T variant="small" muted>{k.definition}</T>
+              <Button title="Delete" small variant="ghost" onPress={() => deleteCard(k)} />
+            </Card>
+          ))}
+        </View>
+      </Section>
+    );
+  };
+
   return (
     <Screen>
-      {sem.rows.courses.map((course) => {
-        const list = cards.filter((k) => k.course_id === course.id);
-        if (list.length === 0) return null;
-        const pending = list.filter((k) => k.status === 'pending').length;
-        return (
-          <Section key={course.id} title={`${course.code ?? course.name} · ${list.length - pending}${pending ? ` (+${pending} waiting)` : ''}`}>
-            <View style={{ gap: 8 }}>
-              {list.filter((k) => k.status !== 'pending').map((k) => (
-                <Card key={k.id} accent={course.color}>
-                  <Row style={{ justifyContent: 'space-between' }}>
-                    <T variant="body" style={{ fontWeight: '600', flex: 1 }}>{k.term}</T>
-                    {k.origin === 'generated' ? <Badge label="from notes" /> : <Badge label="manual" />}
-                  </Row>
-                  <T variant="small" muted>{k.definition}</T>
-                  <Button title="Delete" small variant="ghost" onPress={() => deleteCard(k)} />
-                </Card>
-              ))}
-            </View>
-          </Section>
-        );
-      })}
+      {sem.rows.courses.map((course) => renderGroup(course.id, course.code ?? course.name, cards.filter((k) => k.course_id === course.id), course.color))}
+      {renderGroup('unsorted', 'No class', unsorted)}
     </Screen>
   );
 }

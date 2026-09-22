@@ -1,5 +1,3 @@
-import { Platform } from 'react-native';
-
 export interface ImportedNote {
   title: string;
   body: string;
@@ -36,66 +34,129 @@ export function parseTextFile(content: string, filename: string): ImportedNote {
   };
 }
 
-/** Parse CSV content */
 export interface QuizletCard {
   term: string;
   definition: string;
 }
 
-export function parseCSV(content: string): QuizletCard[] {
-  const lines = content.split('\n').map(line => line.trim()).filter(line => line);
+/** Splits a CSV/TSV row on `delim`, respecting double-quoted fields (which may contain the delimiter). */
+function splitDelimited(line: string, delim: string): string[] {
+  const parts: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === delim && !inQuotes) {
+      parts.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  parts.push(cur);
+  return parts.map((s) => s.trim());
+}
+
+/** Parse CSV (or TSV, with delim: '\t') content: one card per row, `term,definition`. */
+export function parseCSV(content: string, delim = ','): QuizletCard[] {
+  const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const cards: QuizletCard[] = [];
 
-  // Skip header if present
+  // Skip header if present (only when there's more than one row — a single row is always data).
   let startIdx = 0;
-  if (lines.length > 0 && (lines[0].toLowerCase().includes('term') || lines[0].toLowerCase().includes('word'))) {
+  if (lines.length > 1 && /^(term|word|front|question)\b/i.test(lines[0])) {
     startIdx = 1;
   }
 
   for (let i = startIdx; i < lines.length; i++) {
-    const line = lines[i];
-    // Split by comma, but handle quoted values
-    const parts = line.split(',').map(s => s.trim().replace(/^"(.*)"$/, '$1'));
-
-    if (parts.length >= 2) {
-      cards.push({
-        term: parts[0],
-        definition: parts.slice(1).join(','), // Handle multi-part definitions
-      });
-    } else if (parts.length === 1 && parts[0]) {
-      // Single value per line - assume term, wait for next line for definition
-      // For basic MVP, skip this format
+    const parts = splitDelimited(lines[i], delim).map((s) => s.replace(/^"(.*)"$/, '$1'));
+    if (parts.length >= 2 && parts[0]) {
+      cards.push({ term: parts[0], definition: parts.slice(1).join(delim === ',' ? ', ' : ' ') });
     }
   }
 
   return cards;
 }
 
-/** Parse JSON content (Quizlet export format) */
+/** Parse TSV content (tab-separated) — the format Quizlet's own export/import uses. */
+export function parseTSV(content: string): QuizletCard[] {
+  return parseCSV(content, '\t');
+}
+
+/** Parse JSON content: Quizlet's export shape, and a handful of other common shapes. */
 export function parseJSON(content: string): QuizletCard[] {
   try {
     const data = JSON.parse(content);
 
-    // Handle Quizlet export format
-    if (data.flashcards && Array.isArray(data.flashcards)) {
-      return data.flashcards.map((card: any) => ({
-        term: card.word || card.term || '',
-        definition: card.definition || card.def || '',
-      }));
-    }
+    const fromArray = (arr: unknown[]): QuizletCard[] =>
+      arr
+        .map((item): QuizletCard | null => {
+          if (Array.isArray(item)) {
+            // ['term', 'definition'] tuples
+            return item.length >= 2 ? { term: String(item[0]), definition: String(item.slice(1).join(', ')) } : null;
+          }
+          if (item && typeof item === 'object') {
+            const o = item as Record<string, unknown>;
+            const term = o.term ?? o.word ?? o.q ?? o.question ?? o.front ?? o.text;
+            const definition = o.definition ?? o.def ?? o.a ?? o.answer ?? o.back ?? o.meaning;
+            if (term != null && definition != null) return { term: String(term), definition: String(definition) };
+          }
+          return null;
+        })
+        .filter((c): c is QuizletCard => c != null);
 
-    // Handle array of objects with term/definition
-    if (Array.isArray(data)) {
-      return data.map((item: any) => ({
-        term: item.term || item.word || item.q || '',
-        definition: item.definition || item.def || item.a || '',
-      }));
+    if (Array.isArray(data)) return fromArray(data);
+
+    // Common wrapper keys used by various export tools.
+    for (const key of ['flashcards', 'cards', 'terms', 'items']) {
+      if (Array.isArray(data?.[key])) return fromArray(data[key]);
     }
+    if (data?.studySet && Array.isArray(data.studySet.terms)) return fromArray(data.studySet.terms);
 
     return [];
   } catch {
     return [];
   }
+}
+
+const PASTE_SEPARATORS = ['\t', ',', ' - ', ' — ', '::', ':', '|'];
+
+/**
+ * Parses freeform pasted text into cards: one card per row, term and definition split by a
+ * delimiter. Mirrors Quizlet's own "import" box (tab between term/definition, newline between
+ * cards by default), but both delimiters are configurable for other export formats.
+ */
+export function parseQuizletPaste(text: string, termSep = '\t', cardSep = '\n'): QuizletCard[] {
+  const rows = cardSep === '\n' ? text.split(/\r?\n/) : text.split(cardSep);
+  const tryOrder = [termSep, ...PASTE_SEPARATORS.filter((s) => s !== termSep)];
+
+  const cards: QuizletCard[] = [];
+  for (const raw of rows) {
+    const row = raw.trim();
+    if (!row) continue;
+
+    let split: { idx: number; sep: string } | null = null;
+    for (const sep of tryOrder) {
+      const idx = row.indexOf(sep);
+      if (idx > 0) {
+        split = { idx, sep };
+        break;
+      }
+    }
+    if (!split) continue;
+
+    const term = row.slice(0, split.idx).trim();
+    const definition = row.slice(split.idx + split.sep.length).trim();
+    if (term && definition) cards.push({ term, definition });
+  }
+  return cards;
 }
 
 /** Extract plain text from HTML (for DOCX conversion) */

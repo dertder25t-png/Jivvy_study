@@ -23,7 +23,7 @@ const FKS: Partial<Record<TableName, Array<[string, TableName, boolean]>>> = {
   course_policies: [['course_id', 'courses', false]],
   absences: [['course_id', 'courses', false]],
   notes: [['course_id', 'courses', true], ['topic_id', 'topics', true]],
-  cards: [['course_id', 'courses', false], ['topic_id', 'topics', true], ['source_note_id', 'notes', true]],
+  cards: [['course_id', 'courses', true], ['topic_id', 'topics', true], ['source_note_id', 'notes', true]],
   card_reviews: [['card_id', 'cards', false]],
   generation_events: [['card_id', 'cards', true], ['source_note_id', 'notes', true]],
   waiting_on: [['course_id', 'courses', true]],

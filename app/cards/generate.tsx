@@ -22,7 +22,7 @@ export default function GenerateCards() {
   const note = sem.rows.notes.find((n) => n.id === noteId);
 
   const [phase, setPhase] = useState<Phase>('idle');
-  const [summary, setSummary] = useState<{ total: number; survived: number; byReason: Record<string, number>; fellBack: boolean } | null>(null);
+  const [summary, setSummary] = useState<{ total: number; survived: number; byReason: Record<string, number> } | null>(null);
   const [kept, setKept] = useState(0);
   const [editing, setEditing] = useState<CardRow | null>(null);
   const [eTerm, setETerm] = useState('');
@@ -53,7 +53,6 @@ export default function GenerateCards() {
   const course = note.course_id ? sem.courseById.get(note.course_id) : undefined;
 
   const generate = async () => {
-    if (!note.course_id) return;
     setPhase('working');
     setError(null);
     try {
@@ -191,8 +190,7 @@ export default function GenerateCards() {
               ))}
             </Card>
           ) : null}
-          {summary?.fellBack ? <T variant="small" muted>Made with the basic offline formatter — connect the backend for cleaner, smarter rewrites.</T> : null}
-          <Button title="Study these now" onPress={() => router.replace(`/cards/review?courseId=${note.course_id}`)} disabled={kept === 0} />
+          <Button title="Study these now" onPress={() => router.replace(`/cards/review?noteId=${note.id}&order=weakest&limit=${Math.max(kept, 1)}`)} disabled={kept === 0} />
           <Button title="Done" variant="secondary" onPress={back} />
         </>
       ) : null}

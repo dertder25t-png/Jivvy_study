@@ -67,7 +67,7 @@ export function NoteCardsPanel({
 
   const addManual = () => {
     const saved = ensureSaved();
-    if (!saved?.course_id || !mTerm.trim() || !mDef.trim()) return;
+    if (!saved || !mTerm.trim() || !mDef.trim()) return;
     addManualCard({ course_id: saved.course_id, topic_id: saved.topic_id, source_note_id: saved.id, term: mTerm, definition: mDef });
     setMTerm('');
     setMDef('');
@@ -124,9 +124,9 @@ export function NoteCardsPanel({
           </>
         )}
 
-        {note && !note.course_id ? (
+        {note && !note.course_id && sem.rows.courses.length > 0 ? (
           <View style={{ gap: 6 }}>
-            <T variant="small" muted>Which class is this for? Cards file under it.</T>
+            <T variant="small" muted>File this under a class? (optional — cards work fine without one)</T>
             <Row style={{ flexWrap: 'wrap' }}>
               {sem.rows.courses.map((k) => <Chip key={k.id} label={k.code ?? k.name} small color={k.color} onPress={() => fileNote(note, k.id)} />)}
             </Row>
@@ -137,7 +137,7 @@ export function NoteCardsPanel({
           title={busy ? 'Making cards…' : makeLabel}
           onPress={generate}
           loading={busy}
-          disabled={busy || candidates.length === 0 || (!!note && !note.course_id)}
+          disabled={busy || candidates.length === 0}
           small
         />
         {error ? <T variant="small" color={c.warn}>{error}</T> : null}
@@ -145,7 +145,6 @@ export function NoteCardsPanel({
           <View style={{ gap: 2 }}>
             <T variant="small" muted>
               {summary.survived} ready for your OK · {summary.total - summary.survived} filtered out
-              {summary.fellBack ? ' (basic formatter — connect the backend for smarter rewrites)' : ''}
             </T>
             {Object.entries(summary.byReason).map(([k, v]) => (
               <T key={k} variant="small" muted>· {v} {REJECT_REASON_TEXT[k] ?? k}</T>
@@ -213,9 +212,9 @@ export function NoteCardsPanel({
 
         {/* ---------------- add your own ---------------- */}
         {label('Add your own')}
-        <Field value={mTerm} onChangeText={setMTerm} placeholder="Term" editable={!!note?.course_id || !note} />
+        <Field value={mTerm} onChangeText={setMTerm} placeholder="Term" />
         <Field value={mDef} onChangeText={setMDef} placeholder="Definition" multiline style={{ minHeight: 64 }} />
-        <Button title="Add card" small variant="secondary" onPress={addManual} disabled={!mTerm.trim() || !mDef.trim() || (!!note && !note.course_id)} />
+        <Button title="Add card" small variant="secondary" onPress={addManual} disabled={!mTerm.trim() || !mDef.trim()} />
         {course ? <T variant="small" muted>Files under {course.code ?? course.name}, this week’s topic.</T> : null}
 
         {pending.length > 0 && note ? (
