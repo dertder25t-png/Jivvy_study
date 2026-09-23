@@ -101,6 +101,24 @@ describe('classifyFailure', () => {
   });
 });
 
+describe('keyCols', () => {
+  // Must match the primary keys in supabase/migrations: loads are ordered by these columns, and a
+  // table without an `id` column that isn't listed breaks the whole load ("column ... .id does not exist").
+  it('knows the primary key of every table without an id column', () => {
+    expect(keyCols('exam_coverage')).toEqual(['exam_id', 'topic_id']);
+    expect(keyCols('quiz_coverage')).toEqual(['quiz_id', 'topic_id']);
+    expect(keyCols('course_policies')).toEqual(['course_id']);
+    expect(keyCols('learn_progress')).toEqual(['user_id', 'scope_key']);
+  });
+
+  it('keeps join-table rows apart on a refresh', () => {
+    const row = (quiz_id: string, topic_id: string) => ({ quiz_id, topic_id });
+    const prev = { ...EMPTY_ROWS(), quiz_coverage: [row('q1', 't1')] };
+    const next = reconcile(prev, { ...EMPTY_ROWS(), quiz_coverage: [row('q1', 't1'), row('q1', 't2'), row('q2', 't1')] });
+    expect(next.quiz_coverage).toHaveLength(3);
+  });
+});
+
 describe('applyOps', () => {
   it('replays inserts, updates and removes, and is safe to replay twice', () => {
     const ops: Op[] = [

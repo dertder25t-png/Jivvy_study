@@ -24,9 +24,10 @@ export const USER_TABLES = new Set<TableName>([
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRow = Record<string, any>;
 
-/** Columns that uniquely identify a row of each table. */
+/** Columns that uniquely identify a row of each table: its primary key. Every table not listed has `id`. */
 const KEY_COLS: Partial<Record<TableName, string[]>> = {
   exam_coverage: ['exam_id', 'topic_id'],
+  quiz_coverage: ['quiz_id', 'topic_id'],
   course_policies: ['course_id'],
   learn_progress: ['user_id', 'scope_key'],
 };
