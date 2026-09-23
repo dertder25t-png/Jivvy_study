@@ -1,18 +1,33 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
-import { Button, Card, Screen, Section, T } from '@/ui/components';
+import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
-import type { PocketRecommendation } from '@/core/learning';
+import { prefs } from '@/data/prefs';
+import type { PocketRecommendation, StudyDirection } from '@/core/learning';
+
+const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = [
+  { key: 'term_to_def', label: 'Term → Definition', hint: 'See the term, type the definition.' },
+  { key: 'def_to_term', label: 'Definition → Term', hint: 'See the definition, type the term.' },
+  { key: 'mixed', label: 'Mixed', hint: 'Each card picks a side — good for testing you both ways.' },
+];
 
 interface PocketSetupProps {
   recommendation: PocketRecommendation;
   totalCards: number;
+  direction: StudyDirection;
+  onDirectionChange: (d: StudyDirection) => void;
   onStart: (size: number) => void;
 }
 
-export default function PocketSetup({ recommendation, totalCards, onStart }: PocketSetupProps) {
-  const [selected, setSelected] = useState(recommendation.recommended);
+export default function PocketSetup({ recommendation, totalCards, direction, onDirectionChange, onStart }: PocketSetupProps) {
+  const remembered = prefs.get().learnPocketSize;
+  const [selected, setSelected] = useState(remembered && remembered <= totalCards ? remembered : recommendation.recommended);
   const c = useColors();
+
+  const choose = (size: number) => {
+    setSelected(size);
+    prefs.set({ learnPocketSize: size });
+  };
 
   const presets = [3, 5, 10, 15, 20, 30, 50].filter((n) => n <= totalCards);
 
@@ -49,7 +64,7 @@ export default function PocketSetup({ recommendation, totalCards, onStart }: Poc
               {presets.map((size) => (
                 <Pressable
                   key={size}
-                  onPress={() => setSelected(size)}
+                  onPress={() => choose(size)}
                   style={{
                     paddingHorizontal: 12,
                     paddingVertical: 8,
@@ -71,6 +86,18 @@ export default function PocketSetup({ recommendation, totalCards, onStart }: Poc
                 </Pressable>
               ))}
             </View>
+          </View>
+        </Card>
+
+        <Card>
+          <View style={{ gap: 8 }}>
+            <T variant="heading">What to type</T>
+            <Row style={{ flexWrap: 'wrap' }}>
+              {DIRECTIONS.map((d) => (
+                <Chip key={d.key} label={d.label} selected={direction === d.key} onPress={() => onDirectionChange(d.key)} />
+              ))}
+            </Row>
+            <T variant="small" muted>{DIRECTIONS.find((d) => d.key === direction)?.hint}</T>
           </View>
         </Card>
 

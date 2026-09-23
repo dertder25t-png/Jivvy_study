@@ -4,11 +4,14 @@ import { useRouter } from 'expo-router';
 import { coverageGaps } from '@/core/notes';
 import { cardStrength, dueQueue, examReviewQueue } from '@/core/scheduling';
 import { minutesFor, paceSecondsPerCard, studyAdvice } from '@/core/session';
+import { colorForSet, groupIntoSets, testDateInfo } from '@/core/sets';
 import { formatPercent } from '@/core/grades';
-import { MS, relativeDay, relativeTime } from '@/core/time';
+import { localDateString, MS, relativeDay, relativeTime } from '@/core/time';
 import { useSemester } from '@/data/derived';
-import { Badge, Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
+import { Badge, Button, Card, Dot, Empty, Row, Screen, Section, T } from '@/ui/components';
+import { TestCalendar, type TestMarker } from '@/ui/TestCalendar';
 import { useColors } from '@/ui/theme';
+import type { Note } from '@/types/db';
 
 export default function Study() {
   const sem = useSemester();
@@ -42,6 +45,32 @@ export default function Study() {
     for (const k of sem.rows.cards) if (k.status === 'pending' && k.source_note_id) m.set(k.source_note_id, (m.get(k.source_note_id) ?? 0) + 1);
     return [...m.entries()];
   }, [sem.rows.cards]);
+
+  // Every real set (cards grouped by their note), so studying one is a tap from this page —
+  // no trip through "Your cards" or the full setup screen needed. Soonest test first.
+  const noteById = useMemo(() => new Map<string, Note>(sem.rows.notes.map((n) => [n.id, n])), [sem.rows.notes]);
+  const dueByNote = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const k of due) if (k.card.source_note_id) m.set(k.card.source_note_id, (m.get(k.card.source_note_id) ?? 0) + 1);
+    return m;
+  }, [due]);
+  const sets = useMemo(
+    () =>
+      groupIntoSets(live.map((k) => k.card), noteById)
+        .filter((s) => s.noteId)
+        .sort((a, b) => {
+          if (a.testDate && b.testDate) return a.testDate.localeCompare(b.testDate);
+          if (a.testDate) return -1;
+          if (b.testDate) return 1;
+          return a.title.localeCompare(b.title);
+        }),
+    [live, noteById],
+  );
+
+  const testMarkers = useMemo<TestMarker[]>(
+    () => sets.filter((s) => s.testDate).map((s) => ({ ymd: localDateString(new Date(s.testDate!), tz), color: colorForSet(s.noteId!), title: s.title })),
+    [sets, tz],
+  );
 
   // Show what's coming in the next ~10 days; if nothing is that close, still show the first couple
   // so the plan is visibly there ("In 2 weeks · 30 min …") rather than absent.
@@ -128,6 +157,7 @@ export default function Study() {
               variant={examCard ? 'secondary' : 'primary'}
               onPress={() => router.push(`/cards/review?limit=${quickLimit}&order=smart`)}
             />
+            <Button title="Learn mode" variant="secondary" onPress={() => router.push('/cards/learn')} />
             <Button title="Choose what to study" variant="secondary" onPress={() => router.push('/cards/setup')} />
           </Row>
           {advice.lines.slice(1, 2).map((l) => <T key={l} variant="small" muted>{l}</T>)}
@@ -141,6 +171,45 @@ export default function Study() {
           <T variant="small" muted>About 90 seconds — and it counts as a first study pass.</T>
         </Card>
       ))}
+
+      {sets.length > 0 ? (
+        <Section title="Study a set">
+          <Card>
+            {sets.map((s, i) => {
+              const dueCount = dueByNote.get(s.noteId!) ?? 0;
+              const info = s.testDate ? testDateInfo(s.testDate, now, tz) : null;
+              return (
+                <View key={s.noteId} style={{ gap: 6, paddingVertical: 8, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
+                  <Row style={{ justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1 }}>
+                      <Row gap={6}>
+                        {s.testDate ? <Dot color={colorForSet(s.noteId!)} /> : null}
+                        <T variant="body" style={{ fontWeight: '600' }}>{s.title}</T>
+                      </Row>
+                      <T variant="small" muted>
+                        {s.cards.length} card{s.cards.length === 1 ? '' : 's'}{dueCount > 0 ? ` · ${dueCount} due` : ''}
+                      </T>
+                      {info ? <T variant="small" color={info.tone === 'warn' ? c.warn : c.muted}>{info.label}</T> : null}
+                    </View>
+                    <Row gap={8}>
+                      <Button title="Learn" small variant="secondary" onPress={() => router.push(`/cards/learn?noteId=${s.noteId}`)} />
+                      <Button title="Review" small onPress={() => router.push(`/cards/review?noteId=${s.noteId}&order=smart&limit=${s.cards.length}`)} />
+                    </Row>
+                  </Row>
+                </View>
+              );
+            })}
+          </Card>
+        </Section>
+      ) : null}
+
+      {testMarkers.length > 0 ? (
+        <Section title="Study calendar">
+          <Card>
+            <TestCalendar markers={testMarkers} now={now} tz={tz} />
+          </Card>
+        </Section>
+      ) : null}
 
       {plan.length > 0 ? (
         <Section title="Your plan">

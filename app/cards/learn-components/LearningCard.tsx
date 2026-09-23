@@ -2,20 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { Button, Card, Empty, Row, Screen, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
+import { reviewCard } from '@/data/actions';
 import type { Card as CardType } from '@/types/db';
-import type { LearnSession } from '@/core/learning';
-import { recordTypingAttempt, updateSelfGrade } from '@/core/learning';
+import type { LearnSession, StudyDirection } from '@/core/learning';
+import { directionForCard, gradeToRating, recordTypingAttempt, updateSelfGrade } from '@/core/learning';
 
 interface LearningCardProps {
   session: LearnSession;
   cards: CardType[];
+  direction: StudyDirection;
   onPocketComplete: () => void;
 }
 
 type Phase = 'visible' | 'hidden' | 'feedback';
 type Grade = 'easy' | 'good' | 'struggling';
 
-export default function LearningCard({ session, cards, onPocketComplete }: LearningCardProps) {
+export default function LearningCard({ session, cards, direction, onPocketComplete }: LearningCardProps) {
   const c = useColors();
   const cardMap = new Map(cards.map((card) => [card.id, card]));
 
@@ -31,6 +33,10 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
   const pocket = session.cardIds.slice(0, session.pocketSize);
   const currentCardId = pocket[currentCardIndex];
   const currentCard = cardMap.get(currentCardId);
+  const cardDirection = currentCard ? directionForCard(direction, currentCard.id) : 'term_to_def';
+  const prompt = currentCard ? (cardDirection === 'term_to_def' ? currentCard.term : currentCard.definition) : '';
+  const answer = currentCard ? (cardDirection === 'term_to_def' ? currentCard.definition : currentCard.term) : '';
+  const answerLabel = cardDirection === 'term_to_def' ? 'definition' : 'term';
 
   const progress = `${currentCardIndex + 1}/${pocket.length}`;
   const pocketProgress = `${session.completedCards.size + 1}/${pocket.length}`;
@@ -71,8 +77,9 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
   };
 
   const handleGrade = (grade: Grade) => {
-    recordTypingAttempt(session, currentCardId, visibleText, hiddenText, currentCard.definition);
+    recordTypingAttempt(session, currentCardId, visibleText, hiddenText, answer);
     updateSelfGrade(session, currentCardId, grade);
+    reviewCard(currentCard, gradeToRating(grade));
 
     if (currentCardIndex < pocket.length - 1) {
       setCurrentCardIndex(currentCardIndex + 1);
@@ -106,10 +113,10 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
 
         <Card style={{ backgroundColor: c.primary, padding: 16 }}>
           <T variant="title" style={{ color: c.onPrimary, marginBottom: 8 }}>
-            {currentCard.term}
+            {prompt}
           </T>
           <T variant="small" style={{ color: c.onPrimary, opacity: 0.8 }}>
-            Subject
+            {cardDirection === 'term_to_def' ? 'Term' : 'Definition'}
           </T>
         </Card>
 
@@ -126,7 +133,7 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
 
                 <View style={{ backgroundColor: c.surface, padding: 12, borderRadius: 6, marginBottom: 12 }}>
                   <T style={{ lineHeight: 20 }}>
-                    {currentCard.definition}
+                    {answer}
                   </T>
                 </View>
 
@@ -141,7 +148,7 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
                     color: c.text,
                     fontSize: 16,
                   }}
-                  placeholder="Type the definition here..."
+                  placeholder={`Type the ${answerLabel} here...`}
                   placeholderTextColor={c.muted}
                   multiline
                   value={visibleText}
@@ -162,7 +169,7 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
             <View style={{ gap: 12 }}>
               <View>
                 <T variant="heading" style={{ marginBottom: 8 }}>
-                  Phase 2: From memory (definition is hidden)
+                  Phase 2: From memory ({answerLabel} is hidden)
                 </T>
                 <T variant="small" muted style={{ marginBottom: 12 }}>
                   Recall and type what you remember...
@@ -189,7 +196,7 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
 
                 {!showReveal && (
                   <Button
-                    title="Reveal definition"
+                    title={`Reveal ${answerLabel}`}
                     onPress={handleReveal}
                     variant="secondary"
                     small
@@ -207,10 +214,10 @@ export default function LearningCard({ session, cards, onPocketComplete }: Learn
                     }}
                   >
                     <T variant="small" style={{ fontWeight: '600', marginBottom: 4, color: c.muted }}>
-                      Actual definition:
+                      Actual {answerLabel}:
                     </T>
                     <T style={{ lineHeight: 20 }}>
-                      {currentCard.definition}
+                      {answer}
                     </T>
                   </View>
                 )}
