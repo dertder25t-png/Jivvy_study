@@ -178,7 +178,7 @@ export function addSampleSemester(now: Date): Course[] {
     store.insert('notes', {
       id: newId(), user_id: store.userId, course_id: course.id, topic_id: topic?.id ?? null, parent_note_id: null,
       title: null, body: s.body, captured_via: 'in_app', course_inferred: false,
-      outline: bodyToOutline(s.body), created_at: at, updated_at: at,
+      outline: bodyToOutline(s.body), test_date: null, created_at: at, updated_at: at,
     });
   }
   return courses;
@@ -267,7 +267,7 @@ export function removeAbsence(a: Absence) {
 
 // ---------------------------------------------------------------- notes
 export function createNote(args: {
-  body: string; via?: string; explicitCourseId?: string | null; now?: Date; outline?: Note['outline'];
+  body: string; via?: string; explicitCourseId?: string | null; now?: Date; outline?: Note['outline']; testDate?: string | null;
 }): Note {
   const now = args.now ?? new Date();
   const route = routeNote({
@@ -279,6 +279,7 @@ export function createNote(args: {
     id: newId(), user_id: store.userId, course_id: route.course_id, topic_id: route.topic_id, parent_note_id: null,
     title: null, body: args.body, captured_via: args.via ?? 'in_app',
     course_inferred: route.course_inferred, outline: args.outline ?? bodyToOutline(args.body),
+    test_date: args.testDate ?? null,
     created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
@@ -290,12 +291,12 @@ export function createSubNote(parent: Note, body = ''): Note {
   const note: Note = {
     id: newId(), user_id: store.userId, course_id: parent.course_id, topic_id: parent.topic_id, parent_note_id: parent.id,
     title: null, body, captured_via: 'in_app', course_inferred: false,
-    outline: emptyOutline(), created_at: at, updated_at: at,
+    outline: emptyOutline(), test_date: null, created_at: at, updated_at: at,
   };
   return store.insert('notes', note);
 }
 
-export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body' | 'outline'>>): Note {
+export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body' | 'outline' | 'test_date'>>): Note {
   return store.update('notes', note, { ...patch, updated_at: nowIso() });
 }
 

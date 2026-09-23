@@ -16,6 +16,7 @@ export default function LearnMode() {
   const params = useLocalSearchParams<{
     courseId?: string;
     examId?: string;
+    noteId?: string;
     topics?: string;
     limit?: string;
     order?: string;
@@ -32,9 +33,10 @@ export default function LearnMode() {
     () => ({
       courseId: params.courseId ?? undefined,
       examId: params.examId ?? undefined,
+      noteId: params.noteId ?? undefined,
       topicIds: params.topics ? [params.topics] : undefined,
     }),
-    [params.courseId, params.examId, params.topics],
+    [params.courseId, params.examId, params.noteId, params.topics],
   );
 
   const pool = useMemo(
@@ -46,10 +48,17 @@ export default function LearnMode() {
   );
 
   const examDate = useMemo(() => {
-    if (!params.examId) return null;
-    const exam = sem.rows.exams.find((e) => e.id === params.examId);
-    return exam ? new Date(exam.happens_at) : null;
-  }, [params.examId, sem.rows.exams]);
+    if (params.examId) {
+      const exam = sem.rows.exams.find((e) => e.id === params.examId);
+      if (exam) return new Date(exam.happens_at);
+    }
+    // No syllabus exam picked — fall back to this set's own test date, if it has one.
+    if (params.noteId) {
+      const note = sem.rows.notes.find((n) => n.id === params.noteId);
+      if (note?.test_date) return new Date(note.test_date);
+    }
+    return null;
+  }, [params.examId, params.noteId, sem.rows.exams, sem.rows.notes]);
 
   const recommendation = useMemo(
     () => calculateRecommendedPocketSize(pool.length, examDate, sem.now),

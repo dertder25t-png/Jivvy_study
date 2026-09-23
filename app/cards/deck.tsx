@@ -5,8 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { deleteCard, saveNote, updateCard } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { stateFromReviews } from '@/core/scheduling';
-import { relativeTime } from '@/core/time';
+import { dayDiff, localDateString, relativeTime, zonedToUtc } from '@/core/time';
 import { Badge, Button, Empty, Field, Row, Screen, Section, T } from '@/ui/components';
+import { DateField } from '@/ui/fields';
 import { radius, space, useColors } from '@/ui/theme';
 import type { Card as CardRow, CardReview, Note } from '@/types/db';
 
@@ -22,24 +23,41 @@ interface SetGroup {
   key: string;
   title: string;
   noteId: string | null;
+  testDate: string | null;
   cards: CardRow[];
 }
 
 /** Groups cards by the note they were added under ("set title") so a big deck stays navigable. */
-function groupIntoSets(list: CardRow[], noteTitle: (id: string) => string): SetGroup[] {
+function groupIntoSets(list: CardRow[], noteById: Map<string, Note>): SetGroup[] {
   const order: string[] = [];
   const m = new Map<string, SetGroup>();
   for (const k of list) {
     const key = k.source_note_id ?? '__ungrouped__';
     let g = m.get(key);
     if (!g) {
-      g = { key, title: k.source_note_id ? noteTitle(k.source_note_id) : 'Ungrouped cards', noteId: k.source_note_id, cards: [] };
+      const note = k.source_note_id ? noteById.get(k.source_note_id) : undefined;
+      g = {
+        key,
+        title: k.source_note_id ? note?.title || 'Untitled set' : 'Ungrouped cards',
+        noteId: k.source_note_id,
+        testDate: note?.test_date ?? null,
+        cards: [],
+      };
       m.set(key, g);
       order.push(key);
     }
     g.cards.push(k);
   }
   return order.map((k) => m.get(k)!);
+}
+
+/** "5 days until your test", "Test tomorrow", "Test was 2 days ago" — a set's own countdown. */
+function testDateInfo(iso: string, now: Date, tz: string): { label: string; tone: 'warn' | 'default' } {
+  const days = dayDiff(new Date(iso), now, tz);
+  if (days < 0) return { label: `Test was ${relativeTime(iso, now, tz)}`, tone: 'default' };
+  if (days === 0) return { label: 'Test is today', tone: 'warn' };
+  if (days === 1) return { label: 'Test is tomorrow', tone: 'warn' };
+  return { label: `${days} days until your test`, tone: days <= 3 ? 'warn' : 'default' };
 }
 
 // Card tiles fill the row and wrap into as many columns as the screen has room for —
@@ -60,9 +78,9 @@ export default function Deck() {
   const [renamingSet, setRenamingSet] = useState<string | null>(null);
   const [renameText, setRenameText] = useState('');
   const [confirmDeleteSet, setConfirmDeleteSet] = useState<string | null>(null);
+  const [editingTestDateSet, setEditingTestDateSet] = useState<string | null>(null);
 
   const noteById = useMemo(() => new Map<string, Note>(sem.rows.notes.map((n) => [n.id, n])), [sem.rows.notes]);
-  const noteTitle = (id: string) => noteById.get(id)?.title || 'Untitled set';
 
   const reviewsByCard = useMemo(() => {
     const m = new Map<string, CardReview[]>();
@@ -107,6 +125,13 @@ export default function Deck() {
     const note = noteById.get(noteId);
     if (note) saveNote(note, { title: renameText.trim() });
     setRenamingSet(null);
+  };
+
+  const commitTestDate = (noteId: string, ymd: string) => {
+    const note = noteById.get(noteId);
+    if (!note) return;
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? zonedToUtc(ymd, '23:59', sem.tz).toISOString() : null;
+    saveNote(note, { test_date: iso });
   };
 
   const deleteSet = (set: SetGroup) => {
@@ -186,9 +211,25 @@ export default function Deck() {
         </Row>
       );
     }
+    if (editingTestDateSet === setKey) {
+      return (
+        <Row gap={8} style={{ alignItems: 'center' }}>
+          <T variant="small" muted>Test date</T>
+          <DateField
+            value={set.testDate ? localDateString(new Date(set.testDate), sem.tz) : ''}
+            onCommit={(ymd) => commitTestDate(set.noteId!, ymd)}
+            placeholder="YYYY-MM-DD"
+          />
+          {set.testDate ? <Button title="Clear" small variant="ghost" onPress={() => commitTestDate(set.noteId!, '')} /> : null}
+          <Button title="Done" small variant="secondary" onPress={() => setEditingTestDateSet(null)} />
+        </Row>
+      );
+    }
     return (
-      <Row gap={8}>
+      <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <Button title="Learn mode" small onPress={() => router.push(`/cards/learn?noteId=${set.noteId}`)} />
         <Button title="Rename set" small variant="ghost" onPress={() => { setRenamingSet(setKey); setRenameText(set.title); }} />
+        <Button title={set.testDate ? 'Edit test date' : 'Set test date'} small variant="ghost" onPress={() => setEditingTestDateSet(setKey)} />
         <Button title="Delete set" small variant="ghost" onPress={() => setConfirmDeleteSet(setKey)} />
       </Row>
     );
@@ -204,6 +245,11 @@ export default function Deck() {
             <View>
               <T variant="body" style={{ fontWeight: '600' }}>{set.title}</T>
               <T variant="small" muted>{set.cards.length} card{set.cards.length === 1 ? '' : 's'}</T>
+              {set.testDate ? (
+                <T variant="small" style={{ color: testDateInfo(set.testDate, sem.now, sem.tz).tone === 'warn' ? c.warn : c.muted }}>
+                  {testDateInfo(set.testDate, sem.now, sem.tz).label}
+                </T>
+              ) : null}
             </View>
             <Ionicons name={isOpen ? 'chevron-up' : 'chevron-down'} size={20} color={c.muted} />
           </Row>
@@ -224,7 +270,7 @@ export default function Deck() {
     if (list.length === 0) return null;
     const pending = list.filter((k) => k.status === 'pending').length;
     const visible = list.filter((k) => k.status !== 'pending');
-    const sets = groupIntoSets(visible, noteTitle);
+    const sets = groupIntoSets(visible, noteById);
     return (
       <Section key={groupKey} title={`${title} · ${visible.length}${pending ? ` (+${pending} waiting)` : ''}`}>
         <View style={{ gap: 8 }}>

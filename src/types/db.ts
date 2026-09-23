@@ -191,6 +191,8 @@ export interface Note {
   /** Every note is a bullet outline. `body` holds a mirrored nested-markdown rendering of
    * this tree, kept in sync on every edit, for search/flashcards/export to read as plain text. */
   outline: OutlineNode[] | null;
+  /** Optional test date for this set — feeds the days-until-test study pacing in Learn mode. */
+  test_date: ISODateTime | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }
