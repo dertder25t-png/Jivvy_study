@@ -3,14 +3,16 @@ import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { coverageGaps } from '@/core/notes';
 import { cardStrength, dueQueue, examReviewQueue } from '@/core/scheduling';
-import { minutesFor, paceSecondsPerCard, studyAdvice } from '@/core/session';
+import { minutesFor, studyAdvice } from '@/core/session';
 import { colorForSet, groupIntoSets, testDateInfo } from '@/core/sets';
 import { formatPercent } from '@/core/grades';
 import { localDateString, MS, relativeDay, relativeTime } from '@/core/time';
 import { useSemester } from '@/data/derived';
 import { Badge, Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { Columns, useLayout } from '@/ui/layout';
+import { SyncProblemBanner } from '@/ui/SyncBanner';
 import { TestCalendar, type TestMarker } from '@/ui/TestCalendar';
+import { TodayPlan } from '@/ui/TodayPlan';
 import { space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 
@@ -23,7 +25,7 @@ export default function Study() {
 
   const live = useMemo(() => sem.cards.filter((k) => k.card.status !== 'pending' && k.card.status !== 'rejected'), [sem.cards]);
   const due = useMemo(() => dueQueue(live, now), [live, now]);
-  const pace = useMemo(() => paceSecondsPerCard(sem.rows.card_reviews), [sem.rows.card_reviews]);
+  const pace = sem.pace;
   const advice = useMemo(() => studyAdvice({ pool: live, examTargets: sem.examTargets, now, tz, pace }), [live, sem.examTargets, now, tz, pace]);
   // "Start" clears what's due and tops up to a worthwhile session with the weakest cards — never locked to the schedule.
   const quickLimit = Math.min(live.length, Math.min(40, Math.max(10, due.length)));
@@ -69,15 +71,27 @@ export default function Study() {
     [live, noteById],
   );
 
-  const testMarkers = useMemo<TestMarker[]>(
-    () => sets.filter((s) => s.testDate).map((s) => ({ ymd: localDateString(new Date(s.testDate!), tz), color: colorForSet(s.noteId!), title: s.title })),
-    [sets, tz],
-  );
+  // Tests on the calendar: sets with their own test date, plus syllabus exams you have cards for.
+  const testMarkers = useMemo<TestMarker[]>(() => {
+    const out: TestMarker[] = sets.filter((s) => s.testDate).map((s) => ({ ymd: localDateString(new Date(s.testDate!), tz), color: colorForSet(s.noteId!), title: s.title }));
+    const exams = new Map(sem.prep.filter((t) => 'examId' in t.target.scope).map((t) => [t.target.key, t.target]));
+    for (const e of exams.values()) out.push({ ymd: localDateString(e.testAt, tz), color: e.color, title: e.title });
+    return out;
+  }, [sets, sem.prep, tz]);
+
+  const learnedBySet = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of sem.rows.learn_progress) if (p.scope_key.startsWith('note:')) m.set(p.scope_key.slice(5), Object.keys(p.done).length);
+    return m;
+  }, [sem.rows.learn_progress]);
 
   // Show what's coming in the next ~10 days; if nothing is that close, still show the first couple
   // so the plan is visibly there ("In 2 weeks · 30 min …") rather than absent.
-  const soon = sem.sessions.filter((s) => s.dayOffset <= 10).slice(0, 6);
-  const plan = soon.length > 0 ? soon : sem.sessions.slice(0, 2);
+  // Card reviews for an exam already in the daily plan (above) aren't repeated here; notes sessions stay.
+  const planned = new Set(sem.prep.map((t) => ('examId' in t.target.scope ? t.target.scope.examId : '')));
+  const sessions = sem.sessions.filter((s) => s.kind === 'add_notes' || !planned.has(s.examId));
+  const soon = sessions.filter((s) => s.dayOffset <= 10).slice(0, 6);
+  const plan = soon.length > 0 ? soon : sessions.slice(0, 2);
 
   // ---- coverage gaps ("Exam 2 covers 6 topics. You have no notes for 2 of them.") ----
   const gaps = useMemo(
@@ -139,6 +153,8 @@ export default function Study() {
 
   const nothing = live.length === 0 && pendingByNote.length === 0;
 
+  const todayPlan = <TodayPlan prep={sem.prep} now={now} tz={tz} pace={pace} />;
+
   const examHero = examCard ? (
     <Card tone="primary">
       <T variant="label" color={c.primary}>Test {relativeTime(examCard.exam.at, now, tz)}</T>
@@ -192,7 +208,9 @@ export default function Study() {
                 <View style={{ flex: 1, gap: 2 }}>
                   <T variant="body" style={{ fontWeight: '600' }} numberOfLines={1}>{s.title}</T>
                   <T variant="small" muted>
-                    {s.cards.length} card{s.cards.length === 1 ? '' : 's'}{dueCount > 0 ? ` · ${dueCount} due` : ''}
+                    {s.cards.length} card{s.cards.length === 1 ? '' : 's'}
+                    {learnedBySet.has(s.noteId!) ? ` · ${Math.min(learnedBySet.get(s.noteId!)!, s.cards.length)} learned` : ''}
+                    {dueCount > 0 ? ` · ${dueCount} due` : ''}
                   </T>
                   {info ? <T variant="small" color={info.tone === 'warn' ? c.warn : c.muted}>{info.label}</T> : null}
                 </View>
@@ -208,10 +226,10 @@ export default function Study() {
     </Section>
   ) : null;
 
-  const calendar = sets.length > 0 ? (
-    <Section title="Test calendar">
+  const calendar = sets.length > 0 || sem.prep.length > 0 ? (
+    <Section title="Study calendar">
       <Card>
-        <TestCalendar markers={testMarkers} now={now} tz={tz} />
+        <TestCalendar markers={testMarkers} now={now} tz={tz} study={sem.prep} />
       </Card>
     </Section>
   ) : null;
@@ -298,7 +316,7 @@ export default function Study() {
     return (
       <Screen>
         <Columns
-          main={<>{examHero}{studyHero}{pending}{setList}{insights}{empty}</>}
+          main={<><SyncProblemBanner />{todayPlan}{examHero}{studyHero}{pending}{setList}{insights}{empty}</>}
           side={<>{calendar}<Section title="Flashcards">{shortcuts}</Section></>}
           sideWidth={340}
         />
@@ -308,6 +326,8 @@ export default function Study() {
 
   return (
     <Screen>
+      <SyncProblemBanner />
+      {todayPlan}
       {examHero}
       {studyHero}
       {pending}

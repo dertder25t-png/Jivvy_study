@@ -276,7 +276,7 @@ describe('notifications', () => {
       obligations, policies: new Map(), sessions: [], crunch: [], samples: [],
       courseName: () => course.name, now: NOW, tz: TZ,
     });
-    const allowed = new Set(['start_date', 'exam_review', 'late_window_closing', 'collision_week', 'waiting_on', 'escalation']);
+    const allowed = new Set(['start_date', 'exam_review', 'late_window_closing', 'collision_week', 'waiting_on', 'escalation', 'study_plan']);
     expect(out.every((n) => allowed.has(n.kind))).toBe(true);
     expect(out.filter((n) => n.kind === 'start_date')).toHaveLength(1);
     expect(out.some((n) => n.kind === 'escalation')).toBe(true); // 30% weight → high-weight escalation

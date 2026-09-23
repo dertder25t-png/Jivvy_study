@@ -404,12 +404,16 @@ export function examTargets(): ExamTarget[] {
   }));
 }
 
-/** Rate a card; the next due date is scheduled backward from the exam it feeds. */
+/** Rate a card; the next due date is scheduled backward from the test it feeds (a syllabus exam or its set's own test date). */
 export function reviewCard(card: Card, rating: Rating, now = new Date()): CardReview {
   const reviews = store.all('card_reviews').filter((r) => r.card_id === card.id);
   const exam = nextExamFor(card.topic_id, examTargets(), now);
+  const setTest = card.source_note_id ? store.all('notes').find((n) => n.id === card.source_note_id)?.test_date : null;
+  const testAt = [exam?.at, setTest ? new Date(setTest) : null]
+    .filter((d): d is Date => d != null && d.getTime() > now.getTime())
+    .sort((x, y) => x.getTime() - y.getTime())[0];
   const state = stateFromReviews(reviews);
-  const s = nextReview(state, rating, now, exam?.at, { dueAt: state.dueAt });
+  const s = nextReview(state, rating, now, testAt, { dueAt: state.dueAt });
   return store.insert('card_reviews', {
     id: newId(), card_id: card.id, reviewed_at: now.toISOString(), rating,
     interval_days: s.interval_days, ease: s.ease, due_at: s.due_at.toISOString(),

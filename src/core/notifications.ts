@@ -1,7 +1,8 @@
 // Notification engine (§5.6). Fewer, smarter, escalating.
 //   * hard cap: ≤3 per local day, ranked by grade impact, the rest dropped
 //   * allowed types only: start-date nudge, exam-review session, late-window
-//     closing, collision week approaching (once, ~10 days out), waiting_on nudge
+//     closing, collision week approaching (once, ~10 days out), waiting_on nudge,
+//     and the daily flashcard plan for an upcoming test (one a day, at your study time)
 //   * escalation only for high-weight items
 //   * NEVER a streak reminder, NEVER "you haven't opened the app"
 //
@@ -13,6 +14,7 @@ import { DEFAULT_DAILY_MINUTES, effortMinutes, startBy, type EstimateSample } fr
 import { lateStatus } from './policies';
 import { crunchHeadline, crunchNudgeDay, crunchWhen, type CrunchWeek } from './collisions';
 import type { StudySession } from './studyPlan';
+import { prepReminder, type PrepTask } from './testPrep';
 import { MS, addDaysYmd, localDateString, zonedToUtc } from './time';
 
 export const DAILY_CAP = 3;
@@ -25,7 +27,8 @@ export type NotificationKind =
   | 'late_window_closing'
   | 'collision_week'
   | 'waiting_on'
-  | 'escalation';
+  | 'escalation'
+  | 'study_plan';
 
 export interface PlannedNotification {
   id: string;
@@ -42,6 +45,7 @@ export interface PlannedNotification {
 const KIND_PRIORITY: Record<NotificationKind, number> = {
   late_window_closing: 5,
   escalation: 4,
+  study_plan: 3,
   exam_review: 3,
   start_date: 2,
   collision_week: 1,
@@ -59,6 +63,10 @@ export function planNotifications(args: {
   tz: string;
   dailyMinutes?: number;
   horizonDays?: number;
+  /** Day-by-day flashcard plan for upcoming tests (testPrep.ts), reminded at `studyTime`. */
+  prep?: PrepTask[];
+  studyTime?: string;
+  secondsPerCard?: number;
 }): PlannedNotification[] {
   const { obligations, policies, sessions, crunch, samples, courseName, now, tz } = args;
   const dailyMinutes = args.dailyMinutes ?? DEFAULT_DAILY_MINUTES;
@@ -150,8 +158,30 @@ export function planNotifications(args: {
     }
   }
 
+  // Daily flashcard plan: one reminder a day at the student's study time, covering every test.
+  const prep = args.prep ?? [];
+  const byDay = new Map<string, PrepTask[]>();
+  for (const t of prep) byDay.set(t.ymd, [...(byDay.get(t.ymd) ?? []), t]);
+  for (const [ymd, tasks] of byDay) {
+    const fire = zonedToUtc(ymd, args.studyTime ?? '18:00', tz);
+    const text = prepReminder(tasks, args.secondsPerCard ?? 20);
+    if (!text || !inFuture(fire)) continue;
+    out.push({
+      id: `study:${ymd}`,
+      kind: 'study_plan',
+      fireAt: fire,
+      title: text.title,
+      body: text.body,
+      impact: 6 + (tasks.some((t) => t.kind === 'final_review') ? 3 : 0),
+      href: '/study',
+    });
+  }
+  // Exams the daily plan already covers don't also get card-review nudges (notes nudges stay).
+  const planned = new Set(prep.map((t) => ('examId' in t.target.scope ? t.target.scope.examId : '')));
+
   // Exam-review sessions: one per session-day.
   for (const s of sessions) {
+    if (s.kind !== 'add_notes' && planned.has(s.examId)) continue;
     const fire = at9(s.date);
     if (!inFuture(fire)) continue;
     out.push({
