@@ -100,9 +100,14 @@ many minutes of card review are worth spending overall and per day. **Studying e
 or "easy" leaves a card's next review exactly where it was, so cramming never pushes reviews out.
 Logic: `src/core/session.ts`, `src/core/scheduling.ts` (`isEarly`); UI: `app/cards/setup.tsx`, `app/cards/review.tsx`.
 
-**Learn mode remembers your place.** It asks for pocket size and what to type once per set, then always resumes at
-the next card you haven't finished — on any device — until you **Start this set over** (under **Options**).
-Logic: `src/core/learning.ts`; progress is the synced `learn_progress` table.
+**Learn mode remembers your place — and what you've learned stays learned.** It asks for pocket size and what to
+type once per set, then always resumes where you left off, on any device. Each pocket starts with the cards you've
+already learned that are **due for review** (spaced out and squeezed to land before the test date, so a card from
+day 1 is still solid on day 9), then new ones. **Struggling** sends a card to the back of the pocket until you get
+it, and brings it back sooner on the following days. Not sure about some cards? **Flashcards** (from the pocket
+summary, or the link while learning) lets you pick today's shaky ones and flip through them until each is a
+"Got it" — misses come back in Learn later that day. **Start this set over** is under **Options**.
+Logic: `src/core/learning.ts` (+ `scheduling.ts`); progress is the synced `learn_progress` table.
 
 **A plan for every test.** Give a set a test date (or have a syllabus exam with cards) and each day gets its share:
 learn some new cards, review what's due, and go through everything the day before. It shows as **Today's study

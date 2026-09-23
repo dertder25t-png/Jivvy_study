@@ -302,12 +302,16 @@ export interface MetricEvent {
 export type LearnDirection = 'term_to_def' | 'def_to_term' | 'mixed';
 export type LearnGrade = 'easy' | 'good' | 'struggling';
 
-/** How one card went in Learn mode this round. */
+/** How one card went in Learn mode, the last time it was finished there. */
 export interface LearnMark {
   grade: LearnGrade;
   /** Share of the answer's words recalled from memory, 0-1. */
   accuracy: number;
   at: ISODateTime;
+  /** Times it was missed ("Struggling") before it stuck, in that pocket. */
+  misses?: number;
+  /** It came back as a spaced review of a card already learned, not as a new card. */
+  review?: boolean;
 }
 
 /**
@@ -323,6 +327,8 @@ export interface LearnProgress {
   done: Record<string, LearnMark>;
   /** The pocket being worked through, in order (card ids). */
   pocket: string[];
+  /** When that pocket started: a card is finished in it once graded after this. null = long ago. */
+  pocket_started_at: ISODateTime | null;
   /** Goes up each time you start the set over. */
   round: number;
   started_at: ISODateTime;

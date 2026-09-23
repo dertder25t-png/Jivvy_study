@@ -9,6 +9,8 @@ import { Button, Card, Dot, Row, T } from './components';
 import { useLayout } from './layout';
 import { space, useColors } from './theme';
 
+const cardsWord = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
+
 export function TodayPlan({ prep, now, tz, pace }: { prep: PrepTask[]; now: Date; tz: string; pace: number }) {
   const router = useRouter();
   const c = useColors();
@@ -41,17 +43,15 @@ export function TodayPlan({ prep, now, tz, pace }: { prep: PrepTask[]; now: Date
             {soFar && !done ? <T variant="small" muted>So far today: {soFar}</T> : null}
             {!done ? (
               <View style={isPhone ? { gap: space.sm } : { flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-                {t.newCards > 0 ? (
-                  <Button title={`Learn ${t.newCards} new`} small onPress={() => router.push(prepHref(t, 'learn'))} />
-                ) : null}
-                {t.reviewCards > 0 ? (
-                  <Button
-                    title={t.kind === 'learn' ? `Review ${t.reviewCards}` : `Go through all ${t.reviewCards}`}
-                    small
-                    variant={t.newCards > 0 ? 'secondary' : 'primary'}
-                    onPress={() => router.push(prepHref(t, 'review'))}
-                  />
-                ) : null}
+                {t.kind === 'learn' ? (
+                  // Learn serves the day's due reviews first, then new cards — one button does the whole day.
+                  <Button title={`Start in Learn · ${cardsWord(t.newCards + t.reviewCards)}`} small onPress={() => router.push(prepHref(t, 'learn'))} />
+                ) : (
+                  <>
+                    <Button title={`Go through all ${t.reviewCards + t.newCards}`} small onPress={() => router.push(prepHref(t, 'review'))} />
+                    <Button title="Learn mode" small variant="secondary" onPress={() => router.push(prepHref(t, 'learn'))} />
+                  </>
+                )}
               </View>
             ) : null}
           </View>

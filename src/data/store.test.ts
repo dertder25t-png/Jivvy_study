@@ -60,6 +60,14 @@ function fakeServer(initial: Partial<Rows> = {}) {
       rows[t] = (rows[t] as AnyRow[]).filter((r) => !same(t, r, match)) as never;
       bump('this-device');
     },
+    async removeMany(t, ids) {
+      const err = failWith?.('removeMany');
+      if (err) throw err;
+      sent.push(`removeMany ${t} ${ids.length}`);
+      const gone = new Set(ids);
+      rows[t] = (rows[t] as AnyRow[]).filter((r) => !gone.has(r.id)) as never;
+      bump('this-device');
+    },
   };
   return {
     backend, rows, sent, counter,
@@ -249,5 +257,17 @@ describe('change counter', () => {
 
     await store.checkForChanges();
     expect(server.counter.loads).toBe(2); // caught up
+  });
+
+  it("deletes a whole set in one request, and doesn't mistake it for another device's change", async () => {
+    const server = fakeServer({ notes: [note('a'), note('b'), note('c')] });
+    await store.init(server.backend, memoryOutbox());
+    store.removeMany('notes', store.all('notes').filter((n) => n.id !== 'b'));
+    expect(store.all('notes').map((n) => n.id)).toEqual(['b']);
+    await store.flush();
+    expect(server.sent).toEqual(['removeMany notes 2']);
+    expect(server.rows.notes.map((n) => n.id)).toEqual(['b']);
+    await store.checkForChanges();
+    expect(server.counter.loads).toBe(1);
   });
 });

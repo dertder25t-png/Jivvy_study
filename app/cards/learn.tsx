@@ -3,21 +3,27 @@ import { Alert, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { inScope } from '@/core/session';
 import {
-  calculateRecommendedPocketSize, learnOrder, learnScopeKey, pocketStats, resumePoint, type StudyDirection,
+  calculateRecommendedPocketSize, dueForReview, finishedInPocket, learnOrder, learnScopeKey, nextReviewAt, pocketStats,
+  resumePoint, studiedToday, type StudyDirection,
 } from '@/core/learning';
-import { markLearned, restartLearning, setLearnPocket, setLearnSettings, startLearning } from '@/data/actions';
+import { addDaysYmd, localDateString, relativeTime, zonedToUtc } from '@/core/time';
+import { markLearned, restartLearning, reviewCard, setLearnPocket, setLearnSettings, startLearning } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { prefs } from '@/data/prefs';
 import { Button, Empty, Screen } from '@/ui/components';
 import PocketSetup from './learn-components/PocketSetup';
 import LearningCard from './learn-components/LearningCard';
 import PocketSummary from './learn-components/PocketSummary';
+import FlashcardPicker from './learn-components/FlashcardPicker';
+import FlashcardDrill from './learn-components/FlashcardDrill';
 
-type Phase = 'learning' | 'summary' | 'options';
+type Phase = 'learning' | 'summary' | 'options' | 'pick' | 'flashcards';
 
 /**
- * Learn mode. The first time you learn a set it asks how (pocket size, what to type); after that it
- * goes straight back to the next card you haven't finished — on any device — until you start over.
+ * Learn mode. The first time you learn a set it asks how (pocket size, what to type); after that it goes
+ * straight back to where you left off — on any device. Each pocket starts with the cards you've already
+ * learned that are due for review (so what you learned on day 1 is still there on day 9), then new cards.
+ * Cards you're not sure of can be drilled as flashcards without leaving Learn.
  */
 export default function LearnMode() {
   const params = useLocalSearchParams<{
@@ -32,6 +38,10 @@ export default function LearnMode() {
   const [phase, setPhase] = useState<Phase>('learning');
   /** The pocket just finished, for its summary. */
   const [finished, setFinished] = useState<string[]>([]);
+  /** Flashcards: what's ticked to start with, what's being drilled, and where "back" goes. */
+  const [preset, setPreset] = useState<string[]>([]);
+  const [drill, setDrill] = useState<string[]>([]);
+  const [returnTo, setReturnTo] = useState<Phase>('learning');
 
   const scope = useMemo(
     () => ({
@@ -45,12 +55,20 @@ export default function LearnMode() {
   const scopeKey = learnScopeKey(scope);
   const progress = sem.rows.learn_progress.find((p) => p.scope_key === scopeKey) ?? null;
 
-  const pool = useMemo(
-    () => learnOrder(inScope(sem.cards, scope, sem.examTargets).map((k) => k.card)),
-    [sem.cards, scope, sem.examTargets],
-  );
+  const inSet = useMemo(() => inScope(sem.cards, scope, sem.examTargets), [sem.cards, scope, sem.examTargets]);
+  const pool = useMemo(() => learnOrder(inSet.map((k) => k.card)), [inSet]);
   const ids = useMemo(() => pool.map((c) => c.id), [pool]);
-  const point = progress ? resumePoint(ids, progress) : null;
+
+  const today = localDateString(sem.now, sem.tz);
+  const due = useMemo(
+    () => (progress ? dueForReview(inSet, progress.done, zonedToUtc(addDaysYmd(today, 1), '00:00', sem.tz)) : []),
+    [inSet, progress, today, sem.tz],
+  );
+  const todays = useMemo(
+    () => studiedToday(inSet, today, (iso) => localDateString(new Date(iso), sem.tz)),
+    [inSet, today, sem.tz],
+  );
+  const point = progress ? resumePoint(ids, progress, due) : null;
   const pocketKey = point?.pocket.join(',') ?? '';
 
   const examDate = useMemo(() => {
@@ -72,11 +90,11 @@ export default function LearnMode() {
     [remaining, examDate, sem.now],
   );
 
-  // A freshly picked pocket is saved, so every device resumes this same one.
+  // A freshly picked pocket is saved (with its start time), so every device resumes this same one.
   useEffect(() => {
-    if (phase !== 'learning' || !progress || !point || point.pocket.length === 0) return;
-    if (progress.pocket.join(',') !== pocketKey) setLearnPocket(progress, point.pocket);
-  }, [phase, progress, pocketKey]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (phase !== 'learning' || !progress || !point?.isNew) return;
+    setLearnPocket(progress, point.pocket);
+  }, [phase, progress, pocketKey, point?.isNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (pool.length === 0) {
     return (
@@ -113,6 +131,12 @@ export default function LearnMode() {
     router.replace(`/cards/review?${q.toString()}`);
   };
 
+  const openFlashcards = (ticked: string[], from: Phase) => {
+    setPreset(ticked);
+    setReturnTo(from);
+    setPhase('pick');
+  };
+
   if (!progress || !point) {
     const remembered = prefs.get().learnPocketSize;
     return (
@@ -122,6 +146,38 @@ export default function LearnMode() {
         initialSize={remembered && remembered <= pool.length ? remembered : recommendation.recommended}
         initialDirection={prefs.get().learnDirection}
         onStart={(size: number, direction: StudyDirection) => startLearning(scopeKey, { pocketSize: size, direction })}
+      />
+    );
+  }
+
+  if (phase === 'pick') {
+    return (
+      <FlashcardPicker
+        cards={pool}
+        todayIds={todays.all}
+        preselected={preset}
+        onStart={(chosen) => {
+          setDrill(chosen);
+          setPhase('flashcards');
+        }}
+        onCancel={() => setPhase(returnTo)}
+      />
+    );
+  }
+
+  if (phase === 'flashcards') {
+    return (
+      <FlashcardDrill
+        ids={drill}
+        cards={pool}
+        direction={progress.direction}
+        onMiss={(cardId) => {
+          // Not sure of it after all: it's due again soon, so Learn brings it back later today.
+          const card = pool.find((k) => k.id === cardId);
+          if (card) reviewCard(card, 1);
+        }}
+        onBack={() => setPhase(returnTo === 'summary' ? 'summary' : 'learning')}
+        onDone={() => router.back()}
       />
     );
   }
@@ -143,17 +199,24 @@ export default function LearnMode() {
   }
 
   if (phase === 'summary' || point.complete) {
-    const shown = phase === 'summary' ? finished : ids;
+    const shown = phase === 'summary' ? finished : progress.pocket;
+    const retried = shown.filter((id) => finishedInPocket(progress, id) && (progress.done[id].misses ?? 0) > 0);
+    const next = nextReviewAt(inSet, progress.done);
     return (
       <PocketSummary
-        stats={pocketStats(shown, progress.done)}
-        remaining={point.remaining}
+        stats={pocketStats(shown, progress)}
+        complete={point.complete}
+        dueWaiting={due.length}
+        unlearned={point.remaining}
         total={point.total}
         pocketSize={progress.pocket_size}
+        nextReviewIn={next ? relativeTime(next, sem.now, sem.tz) : null}
+        retried={retried.length}
         onNextPocket={(size) => {
           if (size !== progress.pocket_size) setLearnSettings(progress, { pocket_size: size });
           setPhase('learning');
         }}
+        onFlashcards={() => openFlashcards(retried.length > 0 ? retried : todays.shaky, phase === 'summary' ? 'summary' : 'learning')}
         onRestart={restart}
         onReview={review}
         onEndSession={() => router.back()}
@@ -161,21 +224,29 @@ export default function LearnMode() {
     );
   }
 
+  const reviewIds = new Set(point.pocket.filter((id) => progress.done[id] && !finishedInPocket(progress, id)));
+  const startedAt = progress.pocket_started_at ? Date.parse(progress.pocket_started_at) : 0;
   return (
     <LearningCard
-      key={pocketKey}
+      key={`${pocketKey}@${startedAt}`}
       pocket={point.pocket}
-      startIndex={point.position}
+      queue={point.queue}
+      reviewIds={reviewIds}
       cards={pool}
       direction={progress.direction}
       learned={point.learned}
       total={point.total}
-      onGraded={(cardId, grade, accuracy) => markLearned(scopeKey, cardId, { grade, accuracy, at: new Date().toISOString() })}
+      onFinished={(cardId, mark) => {
+        // A card learned before this pocket (and so shown again as a spaced review).
+        const review = Boolean(progress.done[cardId]) && !finishedInPocket(progress, cardId);
+        markLearned(scopeKey, cardId, { ...mark, review, at: new Date().toISOString() });
+      }}
       onPocketComplete={() => {
         setFinished(point.pocket);
         setPhase('summary');
       }}
       onOptions={() => setPhase('options')}
+      onFlashcards={() => openFlashcards(todays.shaky, 'learning')}
     />
   );
 }

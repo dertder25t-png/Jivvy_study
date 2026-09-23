@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TableName } from '@/types/db';
-import { EMPTY_ROWS, keyCols, type Backend, type Op, type OutboxStorage, type Rows, type SyncFailure } from './store';
+import { EMPTY_ROWS, REMOVE_CHUNK, keyCols, type Backend, type Op, type OutboxStorage, type Rows, type SyncFailure } from './store';
 
 // ---------------------------------------------------------------------------
 // Local backend: everything lives on this device (demo mode / no account).
@@ -34,6 +34,7 @@ export function createLocalBackend(): Backend {
     async insert() {},
     async update() {},
     async remove() {},
+    async removeMany() {},
     persist(rows) {
       pending = rows;
       if (timer) clearTimeout(timer);
@@ -154,6 +155,13 @@ export function createSupabaseBackend(client: SupabaseClient, userId: string, cl
         for (const c of keyCols(table)) q = q.eq(c, match[c] as string);
         return tagged(q);
       });
+    },
+    async removeMany(table, ids) {
+      // Deleting an id that's already gone is fine, so a retry after a half-finished run is safe.
+      for (let i = 0; i < ids.length; i += REMOVE_CHUNK) {
+        const chunk = ids.slice(i, i + REMOVE_CHUNK);
+        await run(() => tagged(from(table).delete().in('id', chunk)));
+      }
     },
   };
 }
