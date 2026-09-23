@@ -5,9 +5,9 @@ import {
   cycleChecked, deleteNode, flattenVisible, indentNode, insertSiblingAfter, moveDown, moveUp,
   nextVisibleId, outdentNode, previousVisibleId, toggleCollapsed, updateNodeText, type OutlineNode,
 } from '@/core/outline';
-import { BODY_SIZE } from './Markdown';
 import { useColors } from './theme';
 
+const BODY_SIZE = 17;
 const GUIDE_WIDTH = 22;
 const CHEVRON_WIDTH = 18;
 const BULLET_WIDTH = 20;

@@ -188,9 +188,8 @@ export interface Note {
   body: string;
   captured_via: 'widget' | 'voice' | 'share' | 'in_app' | string;
   course_inferred: boolean;
-  /** 'outline' notes are edited as a structured bullet tree (see `outline`); `body` still
-   * holds a mirrored nested-markdown rendering of that tree for search/flashcards/export. */
-  note_type: 'text' | 'outline';
+  /** Every note is a bullet outline. `body` holds a mirrored nested-markdown rendering of
+   * this tree, kept in sync on every edit, for search/flashcards/export to read as plain text. */
   outline: OutlineNode[] | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;

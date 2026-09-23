@@ -317,7 +317,7 @@ describe('notes routing', () => {
     const gaps = coverageGaps({
       topicIds: topics.map((t) => t.id),
       topics,
-      notes: [{ id: 'n', user_id: 'u', course_id: course.id, topic_id: topics[0].id, parent_note_id: null, title: null, body: 'x'.repeat(80), captured_via: 'in_app', course_inferred: false, note_type: 'text', outline: null, created_at: '', updated_at: '' }],
+      notes: [{ id: 'n', user_id: 'u', course_id: course.id, topic_id: topics[0].id, parent_note_id: null, title: null, body: 'x'.repeat(80), captured_via: 'in_app', course_inferred: false, outline: null, created_at: '', updated_at: '' }],
     });
     expect(gaps.map((g) => g.title)).toEqual(['Cellular respiration']);
   });
