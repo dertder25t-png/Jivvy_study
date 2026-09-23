@@ -2,7 +2,7 @@
 // spine of the app (syllabus → topics → notes → cards → review) is wired in one place.
 import type {
   Absence, Assignment, Card, CardReview, Course, CoursePolicy, Exam, ExamCoverage, Quiz, QuizCoverage, GradeBand, GradeComponent,
-  GenerationEvent, Note, Rating, Term, Topic, WaitingOn,
+  GenerationEvent, LearnDirection, LearnMark, LearnProgress, Note, Rating, Term, Topic, WaitingOn,
 } from '@/types/db';
 import type { NormalizedSyllabus } from '@/core/syllabus/normalize';
 import { guessTerm, normalizeParse } from '@/core/syllabus/normalize';
@@ -311,6 +311,8 @@ export function fileNote(note: Note, courseId: string | null): Note {
 export function deleteNote(note: Note) {
   store.patchLocal('notes', (n) => n.parent_note_id === note.id, { parent_note_id: null });
   store.remove('notes', note);
+  const learn = learnProgressFor(`note:${note.id}`);
+  if (learn) store.remove('learn_progress', learn);
 }
 
 // ---------------------------------------------------------------- flashcards
@@ -359,6 +361,13 @@ export function decideCard(card: Card, decision: 'accepted' | 'rejected' | 'edit
   if (ev) store.update('generation_events', ev, { user_decision: decision, decided_at: nowIso() });
 }
 
+/** Creation times that never tie, so cards added in one go (an import, a paste) keep their order. */
+let lastCardMs = 0;
+function nextCardAt(): string {
+  lastCardMs = Math.max(Date.now(), lastCardMs + 1);
+  return new Date(lastCardMs).toISOString();
+}
+
 export function addManualCard(args: {
   course_id?: string | null;
   topic_id?: string | null;
@@ -373,7 +382,7 @@ export function addManualCard(args: {
     id: newId(), user_id: store.userId, course_id: courseId, topic_id: topic,
     term: args.term.trim(), definition: args.definition.trim(), card_type: 'term_def', cloze_text: null,
     origin: 'manual', status: 'accepted', source_note_id: args.source_note_id ?? null, source_span_start: null,
-    source_span_end: null, created_at: nowIso(),
+    source_span_end: null, created_at: nextCardAt(),
   });
 }
 
@@ -405,6 +414,47 @@ export function reviewCard(card: Card, rating: Rating, now = new Date()): CardRe
     id: newId(), card_id: card.id, reviewed_at: now.toISOString(), rating,
     interval_days: s.interval_days, ease: s.ease, due_at: s.due_at.toISOString(),
   });
+}
+
+// ---------------------------------------------------------------- learn mode
+export function learnProgressFor(scopeKey: string): LearnProgress | undefined {
+  return store.all('learn_progress').find((p) => p.scope_key === scopeKey);
+}
+
+/** First time learning these cards: remember how you want to study them. */
+export function startLearning(scopeKey: string, args: { pocketSize: number; direction: LearnDirection }): LearnProgress {
+  prefs.set({ learnPocketSize: args.pocketSize, learnDirection: args.direction }); // defaults for the next set
+  const existing = learnProgressFor(scopeKey);
+  if (existing) return setLearnSettings(existing, { pocket_size: args.pocketSize, direction: args.direction });
+  const now = nowIso();
+  return store.insert('learn_progress', {
+    user_id: store.userId, scope_key: scopeKey, pocket_size: args.pocketSize, direction: args.direction,
+    done: {}, pocket: [], round: 1, started_at: now, updated_at: now,
+  });
+}
+
+export function setLearnSettings(p: LearnProgress, patch: Partial<Pick<LearnProgress, 'pocket_size' | 'direction'>>): LearnProgress {
+  if (patch.pocket_size) prefs.set({ learnPocketSize: patch.pocket_size });
+  if (patch.direction) prefs.set({ learnDirection: patch.direction });
+  return store.update('learn_progress', p, { ...patch, updated_at: nowIso() });
+}
+
+/** Saves which pocket is underway, so any device resumes the same one. */
+export function setLearnPocket(p: LearnProgress, pocket: string[]): LearnProgress {
+  return store.update('learn_progress', p, { pocket, updated_at: nowIso() });
+}
+
+/** One card finished this round. Merged onto the latest copy, so marks from another device aren't lost. */
+export function markLearned(scopeKey: string, cardId: string, mark: LearnMark) {
+  const p = learnProgressFor(scopeKey);
+  if (!p) return;
+  store.update('learn_progress', p, { done: { ...p.done, [cardId]: mark }, updated_at: mark.at });
+}
+
+/** Start the set over from the first card. Reviews (and so the spaced-repetition schedule) are kept. */
+export function restartLearning(p: LearnProgress): LearnProgress {
+  const now = nowIso();
+  return store.update('learn_progress', p, { done: {}, pocket: [], round: p.round + 1, started_at: now, updated_at: now });
 }
 
 // ---------------------------------------------------------------- waiting on

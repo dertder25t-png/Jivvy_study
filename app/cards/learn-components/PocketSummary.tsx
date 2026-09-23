@@ -2,44 +2,46 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Button, Card, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
-import { prefs } from '@/data/prefs';
-import type { Card as CardType } from '@/types/db';
-import type { LearnSession, PocketRecommendation } from '@/core/learning';
-import { getPocketStats } from '@/core/learning';
+import type { PocketStats } from '@/core/learning';
 
 interface PocketSummaryProps {
-  session: LearnSession;
-  cards: CardType[];
-  recommendation: PocketRecommendation;
+  stats: PocketStats;
+  /** Cards of the set not finished yet this round. */
+  remaining: number;
+  total: number;
+  pocketSize: number;
   onNextPocket: (size: number) => void;
+  onRestart: () => void;
+  onReview: () => void;
   onEndSession: () => void;
 }
 
 export default function PocketSummary({
-  session,
-  cards,
-  recommendation,
+  stats,
+  remaining,
+  total,
+  pocketSize,
   onNextPocket,
+  onRestart,
+  onReview,
   onEndSession,
 }: PocketSummaryProps) {
   const c = useColors();
-  const remembered = prefs.get().learnPocketSize;
-  const [nextSize, setNextSize] = useState(remembered && remembered <= cards.length ? remembered : recommendation.recommended);
-  const stats = getPocketStats(session);
+  const [nextSize, setNextSize] = useState(pocketSize);
+  const finishedSet = remaining === 0;
 
-  const remainingCards = cards.length - (session.currentIndex + session.pocketSize);
-  const presets = [5, 10, 15, 20].filter((n) => n <= remainingCards && n > 0);
-
-  const chooseNext = (size: number) => {
-    setNextSize(size);
-    prefs.set({ learnPocketSize: size });
-  };
+  const presets = [...new Set([5, 10, 15, 20, pocketSize])].filter((n) => n > 0 && n <= Math.max(remaining, pocketSize)).sort((a, b) => a - b);
+  const willStudy = Math.min(nextSize, remaining);
 
   return (
     <Screen maxWidth={760}>
       <View style={{ gap: 12 }}>
-        <Section title="Pocket Complete! 🎉">
-          <T>Great work! Here's how you did.</T>
+        <Section title={finishedSet ? 'Set complete! 🎉' : 'Pocket Complete! 🎉'}>
+          <T>
+            {finishedSet
+              ? `You've learned all ${total} cards in this set. They'll come back in Review when they're due.`
+              : `Great work! ${total - remaining} of ${total} cards learned — your place is saved, so you can stop any time.`}
+          </T>
         </Section>
 
         <View style={{ gap: 12 }}>
@@ -94,22 +96,22 @@ export default function PocketSummary({
                   </T>
                 </Row>
                 <T variant="small" muted style={{ marginTop: 4 }}>
-                  % of definition words you recalled from memory
+                  % of the answer's words you recalled from memory
                 </T>
               </View>
             </View>
           </Card>
         </View>
 
-        {remainingCards > 0 && (
+        {!finishedSet && (
           <Card>
             <View style={{ gap: 12 }}>
               <View>
                 <T variant="heading" style={{ marginBottom: 4 }}>
-                  Keep learning ({remainingCards} cards left)
+                  Keep learning ({remaining} cards left)
                 </T>
                 <T variant="small" muted>
-                  Next pocket: {nextSize} cards
+                  Next pocket: {willStudy} cards
                 </T>
               </View>
 
@@ -117,7 +119,7 @@ export default function PocketSummary({
                 {presets.map((size) => (
                   <Pressable
                     key={size}
-                    onPress={() => chooseNext(size)}
+                    onPress={() => setNextSize(size)}
                     style={{
                       paddingHorizontal: 12,
                       paddingVertical: 8,
@@ -144,18 +146,18 @@ export default function PocketSummary({
         )}
 
         <View style={{ gap: 8 }}>
-          {remainingCards > 0 && (
-            <Button
-              title={`Continue with ${nextSize} more cards`}
-              onPress={() => onNextPocket(nextSize)}
-              variant="primary"
-            />
+          {finishedSet ? (
+            <>
+              <Button title="Done" onPress={onEndSession} variant="primary" />
+              <Button title="Review these cards" onPress={onReview} variant="secondary" />
+              <Button title="Start this set over" onPress={onRestart} variant="ghost" />
+            </>
+          ) : (
+            <>
+              <Button title={`Continue with ${willStudy} more cards`} onPress={() => onNextPocket(nextSize)} variant="primary" />
+              <Button title="Stop here for now" onPress={onEndSession} variant="secondary" />
+            </>
           )}
-          <Button
-            title={remainingCards > 0 ? 'End session' : 'All done!'}
-            onPress={onEndSession}
-            variant={remainingCards > 0 ? 'secondary' : 'primary'}
-          />
         </View>
 
         <Card style={{ backgroundColor: c.surface }}>
