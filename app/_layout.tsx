@@ -13,6 +13,8 @@ import { usePrefs } from '@/data/prefs';
 import { syncNotifications } from '@/notifications/schedule';
 import { AuthScreen } from '@/ui/AuthScreen';
 import { Button, Screen, T } from '@/ui/components';
+import { useLayout } from '@/ui/layout';
+import { Sidebar } from '@/ui/Sidebar';
 import { useColors } from '@/ui/theme';
 
 let comebackHandled = false;
@@ -33,6 +35,18 @@ function Background() {
     return () => sub.remove();
   }, []);
   return null;
+}
+
+/** Desktop gets a persistent sidebar beside every screen; phones and tablets keep the bottom tabs. */
+function AppShell({ children }: { children: React.ReactNode }) {
+  const { isDesktop } = useLayout();
+  if (!isDesktop) return <>{children}</>;
+  return (
+    <View style={{ flex: 1, flexDirection: 'row' }}>
+      <Sidebar />
+      <View style={{ flex: 1, minWidth: 0 }}>{children}</View>
+    </View>
+  );
 }
 
 export default function RootLayout() {
@@ -109,6 +123,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <Background />
+      <AppShell>
       <Stack screenOptions={header}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="capture" options={{ presentation: 'modal', title: 'Capture' }} />
@@ -124,6 +139,8 @@ export default function RootLayout() {
         <Stack.Screen name="cards/review" options={{ title: 'Review' }} />
         <Stack.Screen name="cards/new" options={{ title: 'Add cards' }} />
         <Stack.Screen name="cards/deck" options={{ title: 'Your cards' }} />
+        <Stack.Screen name="cards/learn" options={{ title: 'Learn' }} />
+        <Stack.Screen name="import" options={{ title: 'Import' }} />
         <Stack.Screen name="tests/generate" options={{ title: 'Generate practice questions' }} />
         <Stack.Screen name="tests/review" options={{ title: 'Review questions' }} />
         <Stack.Screen name="crunch" options={{ title: 'Crunch forecast' }} />
@@ -132,6 +149,7 @@ export default function RootLayout() {
         <Stack.Screen name="settings" options={{ title: 'Settings' }} />
         <Stack.Screen name="account" options={{ title: 'Account' }} />
       </Stack>
+      </AppShell>
     </SafeAreaProvider>
   );
 }

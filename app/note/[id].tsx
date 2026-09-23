@@ -12,6 +12,7 @@ import { useSemester } from '@/data/derived';
 import { prefs, usePrefs } from '@/data/prefs';
 import { store } from '@/data/store';
 import { Button, Chip, Empty, Row, Screen, T } from '@/ui/components';
+import { SIDEBAR_WIDTH, useLayout } from '@/ui/layout';
 import { NoteCardsPanel, PANEL_WIDTH } from '@/ui/NoteCardsPanel';
 import { OutlineEditor } from '@/ui/OutlineEditor';
 import { space, useColors } from '@/ui/theme';
@@ -68,7 +69,8 @@ export default function NoteEditor() {
   const sem = useSemester();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const wide = width >= WIDE;
+  const { isDesktop } = useLayout();
+  const wide = width - (isDesktop ? SIDEBAR_WIDTH : 0) >= WIDE;
   const { notePanelOpen, subNoteQuickAddEnabled, subNoteShortcutKey } = usePrefs();
   const panelOpen = notePanelOpen ?? wide;
 

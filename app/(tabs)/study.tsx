@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { coverageGaps } from '@/core/notes';
 import { cardStrength, dueQueue, examReviewQueue } from '@/core/scheduling';
@@ -8,15 +8,17 @@ import { colorForSet, groupIntoSets, testDateInfo } from '@/core/sets';
 import { formatPercent } from '@/core/grades';
 import { localDateString, MS, relativeDay, relativeTime } from '@/core/time';
 import { useSemester } from '@/data/derived';
-import { Badge, Button, Card, Dot, Empty, Row, Screen, Section, T } from '@/ui/components';
+import { Badge, Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
+import { Columns, useLayout } from '@/ui/layout';
 import { TestCalendar, type TestMarker } from '@/ui/TestCalendar';
-import { useColors } from '@/ui/theme';
+import { space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 
 export default function Study() {
   const sem = useSemester();
   const router = useRouter();
   const c = useColors();
+  const { isDesktop, isPhone } = useLayout();
   const { now, tz } = sem;
 
   const live = useMemo(() => sem.cards.filter((k) => k.card.status !== 'pending' && k.card.status !== 'rejected'), [sem.cards]);
@@ -137,80 +139,93 @@ export default function Study() {
 
   const nothing = live.length === 0 && pendingByNote.length === 0;
 
-  return (
-    <Screen>
-      {examCard ? (
-        <Card tone="primary">
-          <T variant="label" color={c.primary}>Test {relativeTime(examCard.exam.at, now, tz)}</T>
-          <T variant="title">{examCard.exam.title}: the {examCard.count} cards you're weakest on</T>
-          <Button title={`Start (${examCard.count} cards)`} onPress={() => router.push(`/cards/review?examId=${examCard.exam.examId}`)} />
-        </Card>
-      ) : null}
+  const examHero = examCard ? (
+    <Card tone="primary">
+      <T variant="label" color={c.primary}>Test {relativeTime(examCard.exam.at, now, tz)}</T>
+      <T variant="title">{examCard.exam.title}: the {examCard.count} cards you're weakest on</T>
+      <Button title={`Start (${examCard.count} cards)`} onPress={() => router.push(`/cards/review?examId=${examCard.exam.examId}`)} style={{ alignSelf: isPhone ? 'stretch' : 'flex-start' }} />
+    </Card>
+  ) : null;
 
-      {live.length > 0 ? (
-        <Card>
-          <T variant="heading">Study</T>
-          <T variant="body">{advice.lines[0]}</T>
-          <Row style={{ flexWrap: 'wrap' }}>
-            <Button
-              title={`Start · ${quickLimit} card${quickLimit === 1 ? '' : 's'} · ~${minutesFor(quickLimit, pace)} min`}
-              variant={examCard ? 'secondary' : 'primary'}
-              onPress={() => router.push(`/cards/review?limit=${quickLimit}&order=smart`)}
-            />
-            <Button title="Learn mode" variant="secondary" onPress={() => router.push('/cards/learn')} />
-            <Button title="Choose what to study" variant="secondary" onPress={() => router.push('/cards/setup')} />
-          </Row>
-          {advice.lines.slice(1, 2).map((l) => <T key={l} variant="small" muted>{l}</T>)}
-          <T variant="small" muted>Optional — study whenever you like, for as long as you like.</T>
-        </Card>
-      ) : null}
+  const studyHero = live.length > 0 ? (
+    <Card>
+      <T variant="heading">Today's review</T>
+      <T variant="body">{advice.lines[0]}</T>
+      <View style={isPhone ? { gap: space.sm } : { flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+        <Button
+          title={`Start · ${quickLimit} card${quickLimit === 1 ? '' : 's'} · ~${minutesFor(quickLimit, pace)} min`}
+          variant={examCard ? 'secondary' : 'primary'}
+          onPress={() => router.push(`/cards/review?limit=${quickLimit}&order=smart`)}
+        />
+        <Row gap={space.sm}>
+          <Button title="Learn mode" variant="secondary" onPress={() => router.push('/cards/learn')} style={isPhone ? { flex: 1 } : undefined} />
+          <Button title="Customize…" variant="secondary" onPress={() => router.push('/cards/setup')} style={isPhone ? { flex: 1 } : undefined} />
+        </Row>
+      </View>
+      {advice.lines.slice(1, 2).map((l) => <T key={l} variant="small" muted>{l}</T>)}
+    </Card>
+  ) : null;
 
-      {pendingByNote.map(([noteId, n]) => (
-        <Card key={noteId} tone="warn" onPress={() => router.push(`/cards/generate?noteId=${noteId}`)}>
-          <T variant="heading">{n} new card{n === 1 ? '' : 's'} waiting for your OK</T>
-          <T variant="small" muted>About 90 seconds — and it counts as a first study pass.</T>
-        </Card>
-      ))}
+  const pending = pendingByNote.map(([noteId, n]) => (
+    <Card key={noteId} tone="warn" onPress={() => router.push(`/cards/generate?noteId=${noteId}`)}>
+      <T variant="heading">{n} new card{n === 1 ? '' : 's'} waiting for your OK</T>
+      <T variant="small" muted>About 90 seconds — and it counts as a first study pass.</T>
+    </Card>
+  ));
 
-      {sets.length > 0 ? (
-        <Section title="Study a set">
-          <Card>
-            {sets.map((s, i) => {
-              const dueCount = dueByNote.get(s.noteId!) ?? 0;
-              const info = s.testDate ? testDateInfo(s.testDate, now, tz) : null;
-              return (
-                <View key={s.noteId} style={{ gap: 6, paddingVertical: 8, borderTopWidth: i > 0 ? 1 : 0, borderTopColor: c.border }}>
-                  <Row style={{ justifyContent: 'space-between' }}>
-                    <View style={{ flex: 1 }}>
-                      <Row gap={6}>
-                        {s.testDate ? <Dot color={colorForSet(s.noteId!)} /> : null}
-                        <T variant="body" style={{ fontWeight: '600' }}>{s.title}</T>
-                      </Row>
-                      <T variant="small" muted>
-                        {s.cards.length} card{s.cards.length === 1 ? '' : 's'}{dueCount > 0 ? ` · ${dueCount} due` : ''}
-                      </T>
-                      {info ? <T variant="small" color={info.tone === 'warn' ? c.warn : c.muted}>{info.label}</T> : null}
-                    </View>
-                    <Row gap={8}>
-                      <Button title="Learn" small variant="secondary" onPress={() => router.push(`/cards/learn?noteId=${s.noteId}`)} />
-                      <Button title="Review" small onPress={() => router.push(`/cards/review?noteId=${s.noteId}&order=smart&limit=${s.cards.length}`)} />
-                    </Row>
-                  </Row>
+  const setList = sets.length > 0 ? (
+    <Section title="Your sets" right={<Button title="Manage" small variant="ghost" onPress={() => router.push('/cards/deck')} />}>
+      <Card style={{ padding: 0, gap: 0, overflow: 'hidden' }}>
+        {sets.map((s, i) => {
+          const dueCount = dueByNote.get(s.noteId!) ?? 0;
+          const info = s.testDate ? testDateInfo(s.testDate, now, tz) : null;
+          return (
+            <View
+              key={s.noteId}
+              style={{
+                flexDirection: isPhone ? 'column' : 'row', alignItems: isPhone ? 'stretch' : 'center', gap: space.md,
+                padding: space.md, paddingLeft: space.lg, borderTopWidth: i > 0 ? StyleSheet.hairlineWidth : 0, borderTopColor: c.border,
+              }}
+            >
+              <Row gap={space.md} style={{ flex: isPhone ? undefined : 1, alignItems: 'stretch' }}>
+                <View style={{ width: 4, borderRadius: 2, backgroundColor: s.testDate ? colorForSet(s.noteId!) : c.border }} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <T variant="body" style={{ fontWeight: '600' }} numberOfLines={1}>{s.title}</T>
+                  <T variant="small" muted>
+                    {s.cards.length} card{s.cards.length === 1 ? '' : 's'}{dueCount > 0 ? ` · ${dueCount} due` : ''}
+                  </T>
+                  {info ? <T variant="small" color={info.tone === 'warn' ? c.warn : c.muted}>{info.label}</T> : null}
                 </View>
-              );
-            })}
-          </Card>
-        </Section>
-      ) : null}
+              </Row>
+              <Row gap={space.sm}>
+                <Button title="Learn" small variant="secondary" onPress={() => router.push(`/cards/learn?noteId=${s.noteId}`)} style={isPhone ? { flex: 1 } : undefined} />
+                <Button title="Review" small onPress={() => router.push(`/cards/review?noteId=${s.noteId}&order=smart&limit=${s.cards.length}`)} style={isPhone ? { flex: 1 } : undefined} />
+              </Row>
+            </View>
+          );
+        })}
+      </Card>
+    </Section>
+  ) : null;
 
-      {testMarkers.length > 0 ? (
-        <Section title="Study calendar">
-          <Card>
-            <TestCalendar markers={testMarkers} now={now} tz={tz} />
-          </Card>
-        </Section>
-      ) : null}
+  const calendar = sets.length > 0 ? (
+    <Section title="Test calendar">
+      <Card>
+        <TestCalendar markers={testMarkers} now={now} tz={tz} />
+      </Card>
+    </Section>
+  ) : null;
 
+  const shortcuts = (
+    <View style={{ flexDirection: isDesktop ? 'column' : 'row', gap: space.sm, flexWrap: 'wrap' }}>
+      <Button title="Add cards" variant="secondary" onPress={() => router.push('/cards/new')} style={isDesktop ? undefined : { flex: 1 }} />
+      <Button title="Import" variant="secondary" onPress={() => router.push('/import')} style={isDesktop ? undefined : { flex: 1 }} />
+      <Button title={`All cards (${live.length})`} variant="ghost" onPress={() => router.push('/cards/deck')} style={isDesktop ? undefined : { flex: 1 }} />
+    </View>
+  );
+
+  const insights = (
+    <>
       {plan.length > 0 ? (
         <Section title="Your plan">
           <Card>
@@ -269,17 +284,38 @@ export default function Study() {
         </Section>
       ) : null}
 
-      {nothing && plan.length === 0 ? (
-        <Empty
-          title="Cards start from your notes"
-          body="Write or capture notes with bolded terms or “Term: meaning” lines, then make cards from any note in one tap. Or add your own."
-        />
-      ) : null}
+    </>
+  );
 
-      <Row style={{ flexWrap: 'wrap' }}>
-        <Button title="Add cards" variant="secondary" onPress={() => router.push('/cards/new')} />
-        <Button title={`Your cards (${live.length})`} variant="ghost" onPress={() => router.push('/cards/deck')} />
-      </Row>
+  const empty = nothing && plan.length === 0 ? (
+    <Empty
+      title="Cards start from your notes"
+      body="Write or capture notes with bolded terms or “Term: meaning” lines, then make cards from any note in one tap. Or add or import your own."
+    />
+  ) : null;
+
+  if (isDesktop) {
+    return (
+      <Screen>
+        <Columns
+          main={<>{examHero}{studyHero}{pending}{setList}{insights}{empty}</>}
+          side={<>{calendar}<Section title="Flashcards">{shortcuts}</Section></>}
+          sideWidth={340}
+        />
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      {examHero}
+      {studyHero}
+      {pending}
+      {setList}
+      {calendar}
+      {insights}
+      {empty}
+      {shortcuts}
     </Screen>
   );
 }

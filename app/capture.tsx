@@ -40,7 +40,7 @@ export default function Capture() {
   };
 
   return (
-    <Screen
+    <Screen maxWidth={760}
       scroll={false}
       footer={
         <Row>

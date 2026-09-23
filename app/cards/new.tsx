@@ -65,7 +65,7 @@ export default function NewCards() {
   } as const;
 
   return (
-    <Screen footer={<Button title="Save card" onPress={save} disabled={!canSave} />}>
+    <Screen maxWidth={760} footer={<Button title="Save card" onPress={save} disabled={!canSave} />}>
       {titleLocked ? (
         <Row style={{ justifyContent: 'space-between' }}>
           <View>

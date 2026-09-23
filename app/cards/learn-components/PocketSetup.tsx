@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
 import { prefs } from '@/data/prefs';
@@ -32,7 +32,7 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
   const presets = [3, 5, 10, 15, 20, 30, 50].filter((n) => n <= totalCards);
 
   return (
-    <Screen
+    <Screen maxWidth={760}
       footer={
         <Button
           title={`Study ${selected} cards`}
@@ -41,7 +41,7 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
         />
       }
     >
-      <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
+      <View style={{ gap: 12 }}>
         <Section title="Learn Mode">
           <T>
             Type out flashcard definitions twice: first while visible, then from memory. Great for
@@ -118,7 +118,7 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
             </T>
           </View>
         </Card>
-      </ScrollView>
+      </View>
     </Screen>
   );
 }
