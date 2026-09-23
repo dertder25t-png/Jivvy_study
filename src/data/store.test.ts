@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { Note } from '@/types/db';
-import { EMPTY_ROWS, applyOps, classifyFailure, keyCols, reconcile, store, type Backend, type Op, type OutboxStorage, type Rows } from './store';
+import {
+  EMPTY_ROWS, GIVE_UP_AFTER_MS, applyOps, classifyFailure, keyCols, othersChanged, reconcile, store,
+  type Backend, type Op, type OutboxStorage, type Rows,
+} from './store';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyRow = Record<string, any>;
@@ -17,35 +20,54 @@ function fakeServer(initial: Partial<Rows> = {}) {
   let failWith: ((op: Op['op']) => unknown) | null = null;
   let loadGate: Promise<void> | null = null;
   const sent: string[] = [];
+  // The change counter (migration 0011): every accepted write bumps it and records who made it.
+  const counter = { version: 0, changedBy: null as string | null, loads: 0 };
+  const bump = (by: string | null) => {
+    counter.version++;
+    counter.changedBy = by;
+  };
   const same = (t: keyof Rows, r: AnyRow, m: AnyRow) => keyCols(t).every((c) => r[c] === m[c]);
   const backend: Backend = {
     mode: 'supabase',
     userId: 'u1',
+    clientId: 'this-device',
     async loadAll() {
       if (loadGate) await loadGate;
+      counter.loads++;
       return JSON.parse(JSON.stringify(rows)) as Rows;
+    },
+    async syncVersion() {
+      return counter.version ? { version: counter.version, changedBy: counter.changedBy } : null;
     },
     async insert(t, list) {
       const err = failWith?.('insert');
       if (err) throw err;
       sent.push(`insert ${t} ${list.map((r) => r.id).join(',')}`);
       (rows[t] as AnyRow[]).push(...JSON.parse(JSON.stringify(list)));
+      bump('this-device');
     },
     async update(t, match, patch) {
       const err = failWith?.('update');
       if (err) throw err;
       sent.push(`update ${t} ${match.id}`);
       rows[t] = (rows[t] as AnyRow[]).map((r) => (same(t, r, match) ? { ...r, ...patch } : r)) as never;
+      bump('this-device');
     },
     async remove(t, match) {
       const err = failWith?.('remove');
       if (err) throw err;
       sent.push(`remove ${t} ${match.id}`);
       rows[t] = (rows[t] as AnyRow[]).filter((r) => !same(t, r, match)) as never;
+      bump('this-device');
     },
   };
   return {
-    backend, rows, sent,
+    backend, rows, sent, counter,
+    /** Another device writes directly to the server. */
+    otherDevice: (change: () => void) => {
+      change();
+      bump('phone');
+    },
     fail: (f: typeof failWith) => { failWith = f; },
     holdLoads: () => {
       let open!: () => void;
@@ -129,7 +151,7 @@ describe('store sync', () => {
   it("still shows changes that haven't reached the server after a reload", async () => {
     const server = fakeServer({ notes: [note('old')] });
     server.fail(() => schemaBehind);
-    const box = memoryOutbox([{ op: 'insert', table: 'notes', rows: [note('queued')] }]);
+    const box = memoryOutbox([{ op: 'insert', table: 'notes', rows: [note('queued')], at: Date.now() - 60_000 }]);
     await store.init(server.backend, box);
     expect(store.all('notes').map((n) => n.id)).toEqual(['old', 'queued']);
     expect(box.saved).toHaveLength(1);
@@ -164,5 +186,50 @@ describe('store sync', () => {
     release();
     await pending;
     expect(store.all('notes').map((n) => [n.id, n.title])).toEqual([['a', 'typed during refresh'], ['b', 'b']]);
+  });
+
+  it("gives up on a write the server has refused for over a day (or one left by an older app), so the rest syncs", async () => {
+    const server = fakeServer();
+    server.fail((op) => (op === 'insert' ? schemaBehind : null));
+    const dayAgo = Date.now() - GIVE_UP_AFTER_MS - 1000;
+    const box = memoryOutbox([
+      { op: 'insert', table: 'notes', rows: [note('ancient')], at: dayAgo },
+      { op: 'insert', table: 'notes', rows: [note('legacy')] },
+      { op: 'update', table: 'notes', match: { id: 'old' }, patch: { title: 'renamed' }, at: Date.now() },
+    ]);
+    server.rows.notes.push(note('old'));
+    await store.init(server.backend, box);
+    expect(server.sent).toEqual(['update notes old']);
+    expect(box.saved).toEqual([]);
+  });
+});
+
+describe('change counter', () => {
+  it('only another device moving the counter means there is something to fetch', () => {
+    const seen = { version: 10, own: 3 };
+    expect(othersChanged(seen, { version: 10, changedBy: 'phone' }, 3, 'me')).toBe(false); // nothing new
+    expect(othersChanged(seen, { version: 12, changedBy: 'me' }, 5, 'me')).toBe(false); // just my two writes
+    expect(othersChanged(seen, { version: 13, changedBy: 'me' }, 5, 'me')).toBe(true); // mine + someone else's
+    expect(othersChanged(seen, { version: 11, changedBy: 'phone' }, 3, 'me')).toBe(true);
+    expect(othersChanged({ version: 0, own: 0 }, null, 0, 'me')).toBe(false); // brand-new account
+  });
+
+  it("doesn't re-download for this device's own writes, and does for another device's", async () => {
+    const server = fakeServer({ notes: [note('a')] });
+    await store.init(server.backend, memoryOutbox());
+    expect(server.counter.loads).toBe(1);
+
+    store.update('notes', store.all('notes')[0], { title: 'typed here' });
+    await store.flush();
+    await store.checkForChanges();
+    expect(server.counter.loads).toBe(1); // one tiny request, no download
+
+    server.otherDevice(() => server.rows.notes.push(note('from-phone')));
+    await store.checkForChanges();
+    expect(server.counter.loads).toBe(2);
+    expect(store.all('notes').map((n) => n.id)).toEqual(['a', 'from-phone']);
+
+    await store.checkForChanges();
+    expect(server.counter.loads).toBe(2); // caught up
   });
 });

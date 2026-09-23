@@ -43,10 +43,23 @@ function keyOf(table: TableName, row: AnyRow): string {
   return keyCols(table).map((c) => String(row[c])).join('\u0000');
 }
 
+/** The account's change counter (see migration 0011): bumped by the server on every write. */
+export interface SyncVersion {
+  version: number;
+  /** The device (x-client-id) behind the latest change. */
+  changedBy: string | null;
+}
+
 export interface Backend {
   mode: 'local' | 'supabase';
   userId: string;
+  /** Tags this device's writes, so it can tell them from other devices'. */
+  clientId?: string;
   loadAll(): Promise<Rows>;
+  /** Every row of one table, including history loadAll leaves out (for "Download my data"). */
+  loadTable?(table: TableName): Promise<AnyRow[]>;
+  /** The change counter; 'unsupported' when the server doesn't have one. */
+  syncVersion?(): Promise<SyncVersion | 'unsupported' | null>;
   insert(table: TableName, rows: AnyRow[]): Promise<void>;
   update(table: TableName, match: AnyRow, patch: AnyRow): Promise<void>;
   remove(table: TableName, match: AnyRow): Promise<void>;
@@ -54,10 +67,35 @@ export interface Backend {
   persist?(rows: Rows): void;
 }
 
-export type Op =
+export type Op = (
   | { op: 'insert'; table: TableName; rows: AnyRow[] }
   | { op: 'update'; table: TableName; match: AnyRow; patch: AnyRow }
-  | { op: 'remove'; table: TableName; match: AnyRow };
+  | { op: 'remove'; table: TableName; match: AnyRow }
+) & {
+  /** When it was queued (ms). A write the server keeps refusing is given up on after a day. */
+  at?: number;
+};
+
+/** Tables whose writes the server doesn't count in the change counter (write-only logging). */
+export const UNCOUNTED_TABLES = new Set<TableName>(['metric_events']);
+
+/** How long a write the server keeps refusing is retried before it's dropped so the rest can sync. */
+export const GIVE_UP_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Did someone else change the account since `seen`? The counter moved by more than this device's own
+ * accepted writes, or the latest change came from another device.
+ */
+export function othersChanged(
+  seen: { version: number; own: number },
+  now: SyncVersion | null,
+  ownWrites: number,
+  clientId: string,
+): boolean {
+  const version = now?.version ?? 0;
+  if (version === seen.version) return false;
+  return version > seen.version + (ownWrites - seen.own) || (now?.changedBy ?? null) !== clientId;
+}
 
 export interface OutboxStorage {
   load(): Promise<Op[]>;
@@ -180,6 +218,10 @@ class Store {
   /** While a refresh is loading: every change made meanwhile, replayed on top of what it loads. */
   private journal: Array<(rows: Rows) => Rows> | null = null;
   private status: SyncStatus = { mode: null, pending: 0, error: null, lastSyncedAt: null };
+  /** Writes of this device the server accepted (on counted tables). */
+  private ownWrites = 0;
+  /** The change counter as of the last full load, and ownWrites at that moment. null = unknown. */
+  private seen: { version: number; own: number } | null = null;
   ready = false;
   pendingWrites = 0;
   syncError: string | null = null;
@@ -201,10 +243,14 @@ class Store {
     this.pendingWrites = this.outbox.length;
     this.syncError = null;
     this.rows = EMPTY_ROWS();
+    this.seen = null;
     // Push anything left from a previous session before pulling fresh data.
     await this.flush();
+    const version = await this.readVersion(backend);
+    const own = this.ownWrites;
     // Whatever still hasn't gone through is shown anyway — it's queued, not lost.
     this.rows = applyOps(await backend.loadAll(), this.outbox);
+    this.seen = baseline(version, own);
     if (backend.mode === 'supabase') this.lastSyncedAt = Date.now();
     this.ready = true;
     this.emit();
@@ -218,6 +264,7 @@ class Store {
     this.flushing = null;
     this.refreshing = null;
     this.journal = null;
+    this.seen = null;
     this.pendingWrites = 0;
     this.syncError = null;
     this.lastSyncedAt = null;
@@ -308,7 +355,7 @@ class Store {
       b.persist?.(this.rows);
       return;
     }
-    this.outbox.push(op);
+    this.outbox.push({ ...op, at: Date.now() });
     this.pendingWrites = this.outbox.length;
     void this.saveOutbox();
     void this.flush();
@@ -346,12 +393,17 @@ class Store {
           else await b.remove(op.table, op.match);
           this.outbox.shift();
           this.syncError = null;
+          if (!UNCOUNTED_TABLES.has(op.table)) this.ownWrites++;
         } catch (err) {
           const verdict = classifyFailure(op.op, err);
           if (verdict === 'done') {
             this.outbox.shift();
           } else if (verdict === 'drop') {
             console.warn('[store] dropping rejected write', op.op, op.table, (err as Error)?.message);
+            this.outbox.shift();
+          } else if (verdict === 'stuck' && Date.now() - (op.at ?? 0) > GIVE_UP_AFTER_MS) {
+            // Refused for over a day (or queued by an older version of the app): let the rest through.
+            console.warn('[store] giving up on a write the server keeps refusing', op.op, op.table, (err as Error)?.message);
             this.outbox.shift();
           } else {
             if (verdict === 'stuck') {
@@ -390,10 +442,13 @@ class Store {
     this.journal = [];
     try {
       await this.flush();
+      const version = await this.readVersion(b); // read first: anything after it is caught next time
+      const own = this.ownWrites;
       const loaded = await b.loadAll();
       if (this.backend !== b || !this.journal) return; // signed out or switched accounts meanwhile
       const next = this.journal.reduce((rows, fn) => fn(rows), applyOps(loaded, this.outbox));
       this.rows = reconcile(this.rows, next);
+      this.seen = baseline(version, own);
       this.lastSyncedAt = Date.now();
       this.emit();
     } catch {
@@ -401,6 +456,46 @@ class Store {
     } finally {
       if (this.backend === b) this.journal = null;
     }
+  }
+
+  /**
+   * The cheap, frequent check: send anything queued, then ask the server for one small counter and
+   * download everything only if another device changed something. Falls back to a full refresh when
+   * there's no baseline yet or the server has no counter.
+   */
+  async checkForChanges(): Promise<void> {
+    const b = this.backend;
+    if (b?.mode !== 'supabase' || !this.ready) return;
+    if (this.outbox.length > 0) await this.flush();
+    if (!this.seen) return this.refresh();
+    const version = await this.readVersion(b);
+    if (this.backend !== b || version === undefined) return; // offline — try again later
+    if (version === 'unsupported' || othersChanged(this.seen, version, this.ownWrites, b.clientId ?? '')) {
+      return this.refresh();
+    }
+    this.seen = { version: version?.version ?? 0, own: this.ownWrites };
+    this.lastSyncedAt = Date.now();
+    this.emit();
+  }
+
+  /** undefined = couldn't ask (offline). */
+  private async readVersion(b: Backend): Promise<SyncVersion | 'unsupported' | null | undefined> {
+    if (!b.syncVersion) return 'unsupported';
+    try {
+      return await b.syncVersion();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Every row of a table, including history the app doesn't keep in memory (falls back to what it has). */
+  async fetchAll<K extends TableName>(table: K): Promise<Tables[K][]> {
+    try {
+      if (this.backend?.loadTable) return (await this.backend.loadTable(table)) as Tables[K][];
+    } catch {
+      /* offline — export what's here */
+    }
+    return this.rows[table];
   }
 
   /** Last resort for a write the server will never take: forget it so the rest can sync. */
@@ -413,6 +508,11 @@ class Store {
     this.emit();
     await this.refresh();
   }
+}
+
+function baseline(version: SyncVersion | 'unsupported' | null | undefined, own: number): { version: number; own: number } | null {
+  if (version === undefined || version === 'unsupported') return null;
+  return { version: version?.version ?? 0, own };
 }
 
 function sameKey(table: TableName, row: AnyRow, match: AnyRow): boolean {

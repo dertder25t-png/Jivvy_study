@@ -112,10 +112,22 @@ plan** on Home and Study, fills in the **study calendar**, and sends one reminde
 ## Syncing across devices
 
 Every change is saved on the device first and sent to your account right away; if a send fails it waits in an
-outbox and is still shown (never hidden) until the server has it. The app pulls other devices' changes when it
-opens or comes back to the front, every 45 s while on screen, and when the connection returns. Study settings
-(daily minutes, study time, Learn defaults) follow the account too. If the server keeps refusing a change, a
-banner says so and **Settings → Data** shows why. Logic: `src/data/store.ts`, `src/data/sync.ts`, `src/data/prefsSync.ts`.
+outbox and is still shown (never hidden) until the server has it. The app picks up other devices' changes when it
+opens or comes back to the front, every 30 s while on screen, and when the connection returns. Each check is one
+tiny request for the account's change counter (`sync_state`, bumped by triggers on every write — migration 0011);
+everything is downloaded again only when *another* device changed something. Study settings (daily minutes, study
+time, Learn defaults) follow the account too. If the server keeps refusing a change, a banner says so and
+**Settings → Data** shows why; after a day it's dropped so the rest can sync.
+Logic: `src/data/store.ts`, `src/data/sync.ts`, `src/data/prefsSync.ts`.
+
+## Security model
+
+Every table has row-level security: a signed-in student reads and writes only their own rows, and a signed-out
+client (the public anon key) can't touch any table. On their own `users` row a student can change only their time
+zone (not `plan`, `email` or `school_id`). The shared parse cache is server-only, uploads are limited to documents
+and photos up to 12 MB in the student's own folder, and no privileged database function is reachable over the
+API. See `supabase/migrations/0010_beta_hardening.sql`, and the dashboard-only settings in
+[DEPLOYMENT_SETUP.md](DEPLOYMENT_SETUP.md#before-inviting-testers).
 
 ## Accounts
 

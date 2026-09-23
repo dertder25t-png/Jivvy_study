@@ -82,6 +82,28 @@ npm start
 | `.env.example` | Template for setup | ✅ Yes | Manual filling |
 | `vercel.json` | Build config | ✅ Yes | Already complete |
 
+## Before inviting testers
+
+The database side is done in migrations (`0010_beta_hardening.sql`, `0011_sync_state.sql`). These are
+dashboard-only settings (Supabase → Authentication):
+
+1. **Leaked password protection** — Authentication → Providers → Email (or Attack Protection) → turn on
+   "Prevent use of leaked passwords". It checks new passwords against HaveIBeenPwned. Needs the Pro plan.
+2. **Minimum password length: 8** — matches what the app asks for (Supabase's default is 6, so the API alone
+   would accept shorter ones).
+3. **Confirm email: on** — the app already handles the code step.
+4. **CAPTCHA** — leave it **off** for now. The app doesn't send a CAPTCHA token yet, so turning it on would
+   block every sign-up. Worth adding (Cloudflare Turnstile) before a public launch.
+5. **Retired function** — `rewrite-cards` (the old AI card formatter) was still deployed; it's now a stub that
+   refuses every call. Remove it for good, along with its API key if one was set:
+   ```bash
+   npx supabase functions delete rewrite-cards --project-ref yvsqppvjxsppzabjmful
+   npx supabase secrets unset ANTHROPIC_API_KEY --project-ref yvsqppvjxsppzabjmful
+   ```
+
+**Always run new migrations on the live project before pushing app code that needs them** — the app will hold
+changes the server can't accept (and say so), but other devices won't see them until the schema catches up.
+
 ## Next Steps
 
 1. **Restart app:** `npm run web` — should now connect to Supabase

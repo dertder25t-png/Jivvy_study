@@ -1,7 +1,7 @@
 import { store } from './store';
 import { asyncOutbox, createLocalBackend, createSupabaseBackend } from './backends';
 import { getSupabase, isSupabaseConfigured } from './supabase';
-import { prefs } from './prefs';
+import { deviceId, prefs } from './prefs';
 import { pullPrefs, watchPrefs } from './prefsSync';
 import { restartApp } from './session';
 import { shouldShowComeback } from '@/core/triage';
@@ -38,7 +38,7 @@ export async function boot(): Promise<BootState> {
         const name = (user.user_metadata as { full_name?: string } | undefined)?.full_name;
         if (name && !prefs.get().studentName) prefs.set({ studentName: name });
         await Promise.all([
-          store.init(createSupabaseBackend(sb, user.id), asyncOutbox(`studyapp.outbox.${user.id}`)),
+          store.init(createSupabaseBackend(sb, user.id, deviceId()), asyncOutbox(`studyapp.outbox.${user.id}`)),
           pullPrefs(sb), // study settings made on another device
         ]);
         stopPrefsWatch = watchPrefs(sb);
