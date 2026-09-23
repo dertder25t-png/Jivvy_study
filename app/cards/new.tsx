@@ -4,9 +4,8 @@ import { useLocalSearchParams } from 'expo-router';
 import { addManualCard, createNote, saveNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { Button, Chip, Field, Row, Screen, T } from '@/ui/components';
-import { DateField } from '@/ui/fields';
+import { CalendarField } from '@/ui/CalendarField';
 import { radius, useColors } from '@/ui/theme';
-import { zonedToUtc } from '@/core/time';
 
 /** Manual cards are first-class: term, definition, save, repeat. No dialogs. A class is optional,
  * but every batch gets a set title so it stays a named group in the deck instead of loose cards. */
@@ -17,7 +16,7 @@ export default function NewCards() {
   const [course, setCourse] = useState<string | null>(courseId ?? null);
   const [setTitle, setSetTitle] = useState('');
   const [setNoteId, setSetNoteId] = useState<string | null>(null);
-  const [testDate, setTestDate] = useState('');
+  const [testDate, setTestDate] = useState<string | null>(null);
   const [term, setTerm] = useState('');
   const [def, setDef] = useState('');
   const [added, setAdded] = useState(0);
@@ -27,11 +26,10 @@ export default function NewCards() {
   const titleLocked = setNoteId !== null;
   const canSave = setTitle.trim().length > 0 && term.trim().length > 0 && def.trim().length > 0;
 
-  const commitTestDate = (ymd: string) => {
-    setTestDate(ymd);
+  const commitTestDate = (iso: string | null) => {
+    setTestDate(iso);
     if (setNoteId) {
       const note = sem.rows.notes.find((n) => n.id === setNoteId);
-      const iso = ymd ? zonedToUtc(ymd, '23:59', sem.tz).toISOString() : null;
       if (note) saveNote(note, { test_date: iso });
     }
   };
@@ -40,8 +38,7 @@ export default function NewCards() {
     if (!canSave) return;
     let noteId = setNoteId;
     if (!noteId) {
-      const testIso = /^\d{4}-\d{2}-\d{2}$/.test(testDate) ? zonedToUtc(testDate, '23:59', sem.tz).toISOString() : null;
-      const note = createNote({ body: '', via: 'manual_set', explicitCourseId: course, testDate: testIso });
+      const note = createNote({ body: '', via: 'manual_set', explicitCourseId: course, testDate });
       saveNote(note, { title: setTitle.trim() });
       noteId = note.id;
       setSetNoteId(noteId);
@@ -56,7 +53,7 @@ export default function NewCards() {
   const startNewSet = () => {
     setSetNoteId(null);
     setSetTitle('');
-    setTestDate('');
+    setTestDate(null);
     setTerm('');
     setDef('');
     setAdded(0);
@@ -87,13 +84,10 @@ export default function NewCards() {
         />
       )}
 
-      <Row style={{ alignItems: 'center', gap: 8 }}>
-        <View>
-          <T variant="label" muted>Test date (optional)</T>
-          <DateField value={testDate} onCommit={commitTestDate} placeholder="YYYY-MM-DD" />
-        </View>
-        {testDate ? <Button title="Clear" small variant="ghost" onPress={() => commitTestDate('')} /> : null}
-      </Row>
+      <View style={{ gap: 4 }}>
+        <T variant="label" muted>Test date (optional)</T>
+        <CalendarField valueIso={testDate} onChange={commitTestDate} tz={sem.tz} now={sem.now} label="Set test date" />
+      </View>
 
       {sem.rows.courses.length > 0 ? (
         <Row style={{ flexWrap: 'wrap' }}>

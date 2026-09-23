@@ -5,9 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { deleteCard, saveNote, updateCard } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { stateFromReviews } from '@/core/scheduling';
-import { dayDiff, localDateString, relativeTime, zonedToUtc } from '@/core/time';
+import { groupIntoSets, testDateInfo, type SetGroup } from '@/core/sets';
+import { relativeTime } from '@/core/time';
 import { Badge, Button, Empty, Field, Row, Screen, Section, T } from '@/ui/components';
-import { DateField } from '@/ui/fields';
+import { CalendarField } from '@/ui/CalendarField';
 import { radius, space, useColors } from '@/ui/theme';
 import type { Card as CardRow, CardReview, Note } from '@/types/db';
 
@@ -17,47 +18,6 @@ function dueInfo(reviews: CardReview[], now: Date, tz: string): { label: string;
   if (!s.dueAt) return { label: 'New — not studied yet', tone: 'muted' };
   if (s.dueAt.getTime() <= now.getTime()) return { label: 'Overdue for review', tone: 'warn' };
   return { label: `Due ${relativeTime(s.dueAt, now, tz)}`, tone: 'default' };
-}
-
-interface SetGroup {
-  key: string;
-  title: string;
-  noteId: string | null;
-  testDate: string | null;
-  cards: CardRow[];
-}
-
-/** Groups cards by the note they were added under ("set title") so a big deck stays navigable. */
-function groupIntoSets(list: CardRow[], noteById: Map<string, Note>): SetGroup[] {
-  const order: string[] = [];
-  const m = new Map<string, SetGroup>();
-  for (const k of list) {
-    const key = k.source_note_id ?? '__ungrouped__';
-    let g = m.get(key);
-    if (!g) {
-      const note = k.source_note_id ? noteById.get(k.source_note_id) : undefined;
-      g = {
-        key,
-        title: k.source_note_id ? note?.title || 'Untitled set' : 'Ungrouped cards',
-        noteId: k.source_note_id,
-        testDate: note?.test_date ?? null,
-        cards: [],
-      };
-      m.set(key, g);
-      order.push(key);
-    }
-    g.cards.push(k);
-  }
-  return order.map((k) => m.get(k)!);
-}
-
-/** "5 days until your test", "Test tomorrow", "Test was 2 days ago" — a set's own countdown. */
-function testDateInfo(iso: string, now: Date, tz: string): { label: string; tone: 'warn' | 'default' } {
-  const days = dayDiff(new Date(iso), now, tz);
-  if (days < 0) return { label: `Test was ${relativeTime(iso, now, tz)}`, tone: 'default' };
-  if (days === 0) return { label: 'Test is today', tone: 'warn' };
-  if (days === 1) return { label: 'Test is tomorrow', tone: 'warn' };
-  return { label: `${days} days until your test`, tone: days <= 3 ? 'warn' : 'default' };
 }
 
 // Card tiles fill the row and wrap into as many columns as the screen has room for —
@@ -127,10 +87,9 @@ export default function Deck() {
     setRenamingSet(null);
   };
 
-  const commitTestDate = (noteId: string, ymd: string) => {
+  const commitTestDate = (noteId: string, iso: string | null) => {
     const note = noteById.get(noteId);
     if (!note) return;
-    const iso = /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? zonedToUtc(ymd, '23:59', sem.tz).toISOString() : null;
     saveNote(note, { test_date: iso });
   };
 
@@ -213,16 +172,17 @@ export default function Deck() {
     }
     if (editingTestDateSet === setKey) {
       return (
-        <Row gap={8} style={{ alignItems: 'center' }}>
+        <View style={{ gap: 6 }}>
           <T variant="small" muted>Test date</T>
-          <DateField
-            value={set.testDate ? localDateString(new Date(set.testDate), sem.tz) : ''}
-            onCommit={(ymd) => commitTestDate(set.noteId!, ymd)}
-            placeholder="YYYY-MM-DD"
+          <CalendarField
+            valueIso={set.testDate}
+            onChange={(iso) => commitTestDate(set.noteId!, iso)}
+            tz={sem.tz}
+            now={sem.now}
+            label="Set test date"
           />
-          {set.testDate ? <Button title="Clear" small variant="ghost" onPress={() => commitTestDate(set.noteId!, '')} /> : null}
-          <Button title="Done" small variant="secondary" onPress={() => setEditingTestDateSet(null)} />
-        </Row>
+          <Button title="Done" small variant="secondary" onPress={() => setEditingTestDateSet(null)} style={{ alignSelf: 'flex-start' }} />
+        </View>
       );
     }
     return (

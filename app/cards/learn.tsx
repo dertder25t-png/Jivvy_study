@@ -3,9 +3,10 @@ import { View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { inScope } from '@/core/session';
 import { useSemester } from '@/data/derived';
+import { prefs } from '@/data/prefs';
 import { Button, Empty, Screen, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
-import { calculateRecommendedPocketSize, createLearnSession, type LearnSession } from '@/core/learning';
+import { calculateRecommendedPocketSize, createLearnSession, type LearnSession, type StudyDirection } from '@/core/learning';
 import PocketSetup from './learn-components/PocketSetup';
 import LearningCard from './learn-components/LearningCard';
 import PocketSummary from './learn-components/PocketSummary';
@@ -28,6 +29,12 @@ export default function LearnMode() {
   const [phase, setPhase] = useState<Phase>('setup');
   const [session, setSession] = useState<LearnSession | null>(null);
   const [pocketSize, setPocketSize] = useState<number | null>(null);
+  const [direction, setDirection] = useState<StudyDirection>(prefs.get().learnDirection);
+
+  const changeDirection = (d: StudyDirection) => {
+    setDirection(d);
+    prefs.set({ learnDirection: d });
+  };
 
   const scope = useMemo(
     () => ({
@@ -114,6 +121,8 @@ export default function LearnMode() {
       <PocketSetup
         recommendation={recommendation}
         totalCards={pool.length}
+        direction={direction}
+        onDirectionChange={changeDirection}
         onStart={handleStartLearning}
       />
     );
@@ -136,6 +145,7 @@ export default function LearnMode() {
       <LearningCard
         session={session}
         cards={pool}
+        direction={direction}
         onPocketComplete={handlePocketComplete}
       />
     );

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Button, Card, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
+import { prefs } from '@/data/prefs';
 import type { Card as CardType } from '@/types/db';
 import type { LearnSession, PocketRecommendation } from '@/core/learning';
 import { getPocketStats } from '@/core/learning';
@@ -22,11 +23,17 @@ export default function PocketSummary({
   onEndSession,
 }: PocketSummaryProps) {
   const c = useColors();
-  const [nextSize, setNextSize] = useState(recommendation.recommended);
+  const remembered = prefs.get().learnPocketSize;
+  const [nextSize, setNextSize] = useState(remembered && remembered <= cards.length ? remembered : recommendation.recommended);
   const stats = getPocketStats(session);
 
   const remainingCards = cards.length - (session.currentIndex + session.pocketSize);
   const presets = [5, 10, 15, 20].filter((n) => n <= remainingCards && n > 0);
+
+  const chooseNext = (size: number) => {
+    setNextSize(size);
+    prefs.set({ learnPocketSize: size });
+  };
 
   return (
     <Screen>
@@ -110,7 +117,7 @@ export default function PocketSummary({
                 {presets.map((size) => (
                   <Pressable
                     key={size}
-                    onPress={() => setNextSize(size)}
+                    onPress={() => chooseNext(size)}
                     style={{
                       paddingHorizontal: 12,
                       paddingVertical: 8,

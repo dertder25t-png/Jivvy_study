@@ -20,6 +20,10 @@ export interface Prefs {
   subNoteQuickAddEnabled: boolean;
   /** Keyboard shortcut (web) that creates a sub-note while editing one. null = off. */
   subNoteShortcutKey: string | null;
+  /** Last pocket size chosen in Learn mode — remembered as the next session's default. */
+  learnPocketSize: number | null;
+  /** Which side of the card Learn mode asks you to type: the definition, the term, or a mix. */
+  learnDirection: 'term_to_def' | 'def_to_term' | 'mixed';
 }
 
 const KEY = 'studyapp.prefs.v1';
@@ -35,6 +39,8 @@ const DEFAULTS = (): Prefs => ({
   lastOpenedAt: null,
   subNoteQuickAddEnabled: true,
   subNoteShortcutKey: 'Tab',
+  learnPocketSize: null,
+  learnDirection: 'term_to_def',
 });
 
 let current: Prefs = DEFAULTS();

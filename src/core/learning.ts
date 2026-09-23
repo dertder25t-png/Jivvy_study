@@ -2,6 +2,27 @@
  * Learning mode session management & pocket sizing.
  * Organizes cards into "pockets" for active-recall typing practice.
  */
+import type { Rating } from '@/types/db';
+
+/** Which side of the card gets typed. 'mixed' picks a side per card, deterministically. */
+export type StudyDirection = 'term_to_def' | 'def_to_term' | 'mixed';
+
+function hashCode(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/** Resolves 'mixed' to a concrete direction for a specific card, stable across re-renders. */
+export function directionForCard(direction: StudyDirection, cardId: string): 'term_to_def' | 'def_to_term' {
+  if (direction !== 'mixed') return direction;
+  return hashCode(cardId) % 2 === 0 ? 'term_to_def' : 'def_to_term';
+}
+
+/** Learn mode's self-rating, mapped onto the same 1-4 scale the spaced-repetition schedule uses. */
+export function gradeToRating(grade: 'easy' | 'good' | 'struggling'): Rating {
+  return grade === 'easy' ? 4 : grade === 'good' ? 3 : 2;
+}
 
 export interface PocketRecommendation {
   recommended: number;
