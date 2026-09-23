@@ -10,6 +10,7 @@ import { useSemester } from '@/data/derived';
 import { usePrefs } from '@/data/prefs';
 import { Button, Card, Chip, Dot, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { useLayout } from '@/ui/layout';
+import { SyncProblemBanner } from '@/ui/SyncBanner';
 import { radius, space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 
@@ -115,6 +116,7 @@ export default function Notes() {
 
   return (
     <Screen maxWidth={900}>
+      <SyncProblemBanner />
       <Row gap={8}>
         <Button title="New note" onPress={() => router.push('/note/new')} style={isPhone ? { flex: 1 } : undefined} />
         <Button title="Import" variant="secondary" onPress={() => router.push('/import')} style={isPhone ? { flex: 1 } : undefined} />

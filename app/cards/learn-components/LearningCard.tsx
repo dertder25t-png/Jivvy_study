@@ -5,14 +5,23 @@ import { useLayout } from '@/ui/layout';
 import { radius, space, useColors } from '@/ui/theme';
 import { reviewCard } from '@/data/actions';
 import type { Card as CardType } from '@/types/db';
-import type { LearnSession, StudyDirection } from '@/core/learning';
-import { directionForCard, gradeToRating, recordTypingAttempt, updateSelfGrade } from '@/core/learning';
+import type { StudyDirection } from '@/core/learning';
+import { calculateTypingAccuracy, directionForCard, gradeToRating } from '@/core/learning';
 
 interface LearningCardProps {
-  session: LearnSession;
+  /** The pocket's card ids, in order. */
+  pocket: string[];
+  /** Where to start in the pocket — the first card not finished yet. */
+  startIndex: number;
   cards: CardType[];
   direction: StudyDirection;
+  /** Progress through the whole set this round. */
+  learned: number;
+  total: number;
+  /** Called as each card is finished, so progress is saved card by card. */
+  onGraded: (cardId: string, grade: Grade, accuracy: number) => void;
   onPocketComplete: () => void;
+  onOptions: () => void;
 }
 
 type Phase = 'visible' | 'hidden' | 'feedback';
@@ -21,13 +30,13 @@ type Grade = 'easy' | 'good' | 'struggling';
 // The browser's own focus ring clashes with ours (we recolor the border instead).
 const NO_RING = (Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } : {}) as object;
 
-export default function LearningCard({ session, cards, direction, onPocketComplete }: LearningCardProps) {
+export default function LearningCard({ pocket, startIndex, cards, direction, learned, total, onGraded, onPocketComplete, onOptions }: LearningCardProps) {
   const c = useColors();
   const { isPhone } = useLayout();
   const [focused, setFocused] = useState(false);
   const cardMap = new Map(cards.map((card) => [card.id, card]));
 
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
+  const [currentCardIndex, setCurrentCardIndex] = useState(startIndex);
   const [phase, setPhase] = useState<Phase>('visible');
   const [visibleText, setVisibleText] = useState('');
   const [hiddenText, setHiddenText] = useState('');
@@ -36,7 +45,6 @@ export default function LearningCard({ session, cards, direction, onPocketComple
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hiddenInputRef = useRef<TextInput>(null);
 
-  const pocket = session.cardIds.slice(0, session.pocketSize);
   const currentCardId = pocket[currentCardIndex];
   const currentCard = cardMap.get(currentCardId);
   const cardDirection = currentCard ? directionForCard(direction, currentCard.id) : 'term_to_def';
@@ -80,9 +88,8 @@ export default function LearningCard({ session, cards, direction, onPocketComple
   };
 
   const handleGrade = (grade: Grade) => {
-    recordTypingAttempt(session, currentCardId, visibleText, hiddenText, answer);
-    updateSelfGrade(session, currentCardId, grade);
     reviewCard(currentCard, gradeToRating(grade));
+    onGraded(currentCardId, grade, calculateTypingAccuracy(hiddenText, answer));
 
     if (currentCardIndex < pocket.length - 1) {
       setCurrentCardIndex(currentCardIndex + 1);
@@ -131,6 +138,12 @@ export default function LearningCard({ session, cards, direction, onPocketComple
             {phase === 'visible' ? <T variant="small" muted>Hides in {timeRemaining}s</T> : null}
           </Row>
           <ProgressBar value={currentCardIndex / pocket.length} />
+          <Row style={{ justifyContent: 'space-between' }}>
+            <T variant="small" muted>{learned} of {total} learned in this set</T>
+            <Pressable onPress={onOptions} accessibilityRole="button" hitSlop={8}>
+              <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Options</T>
+            </Pressable>
+          </Row>
         </View>
 
         {/* One card: the question on top, where you answer it underneath. The question is framed as one so it

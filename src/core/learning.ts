@@ -1,11 +1,12 @@
 /**
- * Learning mode session management & pocket sizing.
- * Organizes cards into "pockets" for active-recall typing practice.
+ * Learn mode: works through a set in "pockets" of active-recall typing practice, and remembers
+ * where you are (a LearnProgress row, synced like everything else) so it picks up where you left
+ * off — on any device — instead of starting over.
  */
-import type { Rating } from '@/types/db';
+import type { Card, LearnDirection, LearnMark, LearnProgress, Rating } from '@/types/db';
 
 /** Which side of the card gets typed. 'mixed' picks a side per card, deterministically. */
-export type StudyDirection = 'term_to_def' | 'def_to_term' | 'mixed';
+export type StudyDirection = LearnDirection;
 
 function hashCode(s: string): number {
   let h = 0;
@@ -82,35 +83,7 @@ export function calculateRecommendedPocketSize(
     recommended,
     min: 1,
     max: totalCards,
-    rationale: `${recommended} cards/day over ${daysRemaining} days (${totalCards} total)`,
-  };
-}
-
-export interface LearnSession {
-  cardIds: string[];
-  pocketSize: number;
-  currentIndex: number;
-  completedCards: Map<string, CardTypingAttempt>;
-}
-
-export interface CardTypingAttempt {
-  cardId: string;
-  visibleTyping: string;
-  hiddenTyping: string;
-  accuracy: number; // 0-1, undefined if not compared
-  selfGrade: 'easy' | 'good' | 'struggling' | null; // user's self-rating
-  timestamp: number;
-}
-
-/**
- * Create a new learning session with the given cards and pocket size.
- */
-export function createLearnSession(cardIds: string[], pocketSize: number): LearnSession {
-  return {
-    cardIds,
-    pocketSize: Math.min(pocketSize, cardIds.length),
-    currentIndex: 0,
-    completedCards: new Map(),
+    rationale: `${recommended} cards/day over ${daysRemaining} days (${totalCards} to go)`,
   };
 }
 
@@ -150,95 +123,86 @@ export function calculateTypingAccuracy(typed: string, actual: string): number {
   return matches / actualWords.length;
 }
 
+// ---------------------------------------------------------------- progress
+
+export interface LearnScope {
+  noteId?: string | null;
+  examId?: string | null;
+  courseId?: string | null;
+  topicIds?: string[];
+}
+
+/** Names the cards a Learn session covers, so its progress can be found again on any device. */
+export function learnScopeKey(scope: LearnScope): string {
+  const parts: string[] = [];
+  if (scope.noteId) parts.push(`note:${scope.noteId}`);
+  if (scope.examId) parts.push(`exam:${scope.examId}`);
+  if (scope.courseId) parts.push(`course:${scope.courseId}`);
+  for (const t of [...(scope.topicIds ?? [])].sort()) parts.push(`topic:${t}`);
+  return parts.join('|') || 'all';
+}
+
+/** Learn goes through a set in the order its cards were made (the note's order) — the same on every device. */
+export function learnOrder(cards: Card[]): Card[] {
+  return [...cards].sort(
+    (a, b) =>
+      Date.parse(a.created_at) - Date.parse(b.created_at) ||
+      (a.source_span_start ?? 0) - (b.source_span_start ?? 0) ||
+      a.id.localeCompare(b.id),
+  );
+}
+
+export interface ResumePoint {
+  /** The pocket to work on, in order (finished cards included, so "Card 4 of 10" reads right). */
+  pocket: string[];
+  /** Index of the first unfinished card in `pocket`. */
+  position: number;
+  /** Cards of the set finished this round, and how many are left. */
+  learned: number;
+  remaining: number;
+  total: number;
+  complete: boolean;
+}
+
 /**
- * Record a typing attempt for a card.
+ * Where to pick up: the pocket you were partway through (minus any cards deleted since), or else the
+ * next `pocket_size` cards you haven't finished this round.
  */
-export function recordTypingAttempt(
-  session: LearnSession,
-  cardId: string,
-  visibleTyping: string,
-  hiddenTyping: string,
-  actualDefinition: string,
-): CardTypingAttempt {
-  const accuracy = calculateTypingAccuracy(hiddenTyping, actualDefinition);
-  const attempt: CardTypingAttempt = {
-    cardId,
-    visibleTyping,
-    hiddenTyping,
-    accuracy,
-    selfGrade: null,
-    timestamp: Date.now(),
+export function resumePoint(orderedIds: string[], progress: Pick<LearnProgress, 'done' | 'pocket' | 'pocket_size'>): ResumePoint {
+  const inSet = new Set(orderedIds);
+  const finished = (id: string) => Boolean(progress.done[id]);
+  const learned = orderedIds.filter(finished).length;
+  const saved = progress.pocket.filter((id) => inSet.has(id));
+  const pocket = saved.some((id) => !finished(id))
+    ? saved
+    : orderedIds.filter((id) => !finished(id)).slice(0, Math.max(1, progress.pocket_size));
+  return {
+    pocket,
+    position: Math.max(0, pocket.findIndex((id) => !finished(id))),
+    learned,
+    remaining: orderedIds.length - learned,
+    total: orderedIds.length,
+    complete: orderedIds.length > 0 && learned === orderedIds.length,
   };
-  session.completedCards.set(cardId, attempt);
-  return attempt;
 }
 
-/**
- * Update the self-grade for a typing attempt.
- */
-export function updateSelfGrade(
-  session: LearnSession,
-  cardId: string,
-  grade: 'easy' | 'good' | 'struggling',
-): void {
-  const attempt = session.completedCards.get(cardId);
-  if (attempt) {
-    attempt.selfGrade = grade;
-  }
-}
-
-/**
- * Get the next pocket of cards (up to pocketSize).
- */
-export function getNextPocket(session: LearnSession): string[] {
-  const start = session.currentIndex;
-  const end = Math.min(start + session.pocketSize, session.cardIds.length);
-  return session.cardIds.slice(start, end);
-}
-
-/**
- * Check if there are more pockets to study.
- */
-export function hasNextPocket(session: LearnSession): boolean {
-  return session.currentIndex + session.pocketSize < session.cardIds.length;
-}
-
-/**
- * Advance to the next pocket.
- */
-export function advanceToPocket(session: LearnSession): void {
-  session.currentIndex = Math.min(session.currentIndex + session.pocketSize, session.cardIds.length);
-}
-
-/**
- * Get statistics for the completed pocket.
- */
-export function getPocketStats(session: LearnSession): {
+export interface PocketStats {
   completed: number;
   easy: number;
   good: number;
   struggling: number;
   averageAccuracy: number;
-} {
-  const completed = session.completedCards.size;
-  let easy = 0;
-  let good = 0;
-  let struggling = 0;
-  let totalAccuracy = 0;
+}
 
-  for (const attempt of session.completedCards.values()) {
-    if (attempt.selfGrade === 'easy') easy++;
-    else if (attempt.selfGrade === 'good') good++;
-    else if (attempt.selfGrade === 'struggling') struggling++;
-
-    totalAccuracy += attempt.accuracy;
-  }
-
+/** How a pocket went, from the marks saved as you finished each card. */
+export function pocketStats(pocket: string[], done: Record<string, LearnMark>): PocketStats {
+  const marks = pocket.map((id) => done[id]).filter((m): m is LearnMark => Boolean(m));
+  const count = (g: LearnMark['grade']) => marks.filter((m) => m.grade === g).length;
   return {
-    completed,
-    easy,
-    good,
-    struggling,
-    averageAccuracy: completed > 0 ? totalAccuracy / completed : 0,
+    completed: marks.length,
+    easy: count('easy'),
+    good: count('good'),
+    struggling: count('struggling'),
+    averageAccuracy: marks.length > 0 ? marks.reduce((s, m) => s + m.accuracy, 0) / marks.length : 0,
   };
 }

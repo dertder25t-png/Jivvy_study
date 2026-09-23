@@ -11,6 +11,9 @@ import { courseGrade, type CourseGrade } from '@/core/grades';
 import type { CardWithReviews, ExamTarget } from '@/core/scheduling';
 import { needsConfirmation } from '@/core/notes';
 import { planNotifications, type PlannedNotification } from '@/core/notifications';
+import { inScope, paceSecondsPerCard, usable } from '@/core/session';
+import { colorForSet } from '@/core/sets';
+import { planTestPrep, type PrepTarget, type PrepTask } from '@/core/testPrep';
 
 /** A clock that ticks each minute so "in 40 min" stays honest. */
 export function useNow(intervalMs = 60_000): Date {
@@ -42,6 +45,10 @@ export interface Semester {
   inboxCount: number;
   courseName: (id: string | null) => string;
   notifications: PlannedNotification[];
+  /** Day-by-day flashcard plan for every upcoming test (sets with a test date + syllabus exams). */
+  prep: PrepTask[];
+  /** Your review pace, seconds per card. */
+  pace: number;
 }
 
 function groupBy<T>(list: T[], key: (t: T) => string): Map<string, T[]> {
@@ -57,7 +64,7 @@ function groupBy<T>(list: T[], key: (t: T) => string): Map<string, T[]> {
 
 export function useSemester(): Semester {
   const rows = useStoreSnapshot();
-  const { tz, dailyMinutes } = usePrefs();
+  const { tz, dailyMinutes, studyTime } = usePrefs();
   const now = useNow();
 
   return useMemo(() => {
@@ -96,15 +103,39 @@ export function useSemester(): Semester {
     });
 
     const courseName = (id: string | null) => (id ? courseById.get(id)?.code ?? courseById.get(id)?.name ?? '' : '');
+
+    // Every upcoming test that has flashcards: a set with its own test date, or a syllabus exam.
+    const cardsByNote = groupBy(cards.filter((k) => usable(k) && k.card.source_note_id), (k) => k.card.source_note_id!);
+    const prepTargets: PrepTarget[] = [];
+    for (const n of rows.notes) {
+      const set = n.test_date ? cardsByNote.get(n.id) : undefined;
+      if (!set) continue;
+      prepTargets.push({
+        key: `note:${n.id}`, title: n.title || 'Untitled set', color: colorForSet(n.id),
+        testAt: new Date(n.test_date!), scope: { noteId: n.id }, cards: set,
+      });
+    }
+    for (const e of rows.exams) {
+      const covered = inScope(cards, { examId: e.id }, examTargets);
+      if (covered.length === 0) continue;
+      prepTargets.push({
+        key: `exam:${e.id}`, title: [courseName(e.course_id), e.title].filter(Boolean).join(' '),
+        color: courseById.get(e.course_id)?.color ?? '#4F46E5', testAt: new Date(e.happens_at), scope: { examId: e.id }, cards: covered,
+      });
+    }
+    const prep = planTestPrep({ targets: prepTargets, now, tz });
+    const pace = paceSecondsPerCard(rows.card_reviews);
+
     const notifications = planNotifications({
       obligations, policies, sessions, crunch, samples, courseName, now, tz, dailyMinutes,
+      prep, studyTime, secondsPerCard: pace,
     });
 
     return {
       rows, tz, now, courseById, policies, componentsByCourse, assignmentsByCourse, topicsByCourse,
       examsByCourse, obligations, grades, crunch, samples, cards, examTargets, sessions,
-      inboxCount: rows.notes.filter(needsConfirmation).length, courseName, notifications,
+      inboxCount: rows.notes.filter(needsConfirmation).length, courseName, notifications, prep, pace,
     };
     // `now` is intentionally minute-granular
-  }, [rows, tz, dailyMinutes, now]);
+  }, [rows, tz, dailyMinutes, studyTime, now]);
 }

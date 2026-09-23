@@ -1,7 +1,10 @@
 // One in-memory, observable copy of the user's data, backed by a swappable
 // Backend (on-device for demo/offline, Supabase for accounts). A student's whole
 // semester is a few thousand rows, so the UI reads synchronously from memory and
-// writes go through optimistically. Failed network writes wait in an outbox.
+// writes go through optimistically. Writes the server hasn't accepted yet wait in
+// an outbox, and are replayed on top of every fresh load — so a change never
+// vanishes from view just because it hasn't reached the server. `refresh()` pulls
+// in what other devices changed.
 import { useSyncExternalStore } from 'react';
 import type { TableName, Tables } from '@/types/db';
 
@@ -10,12 +13,12 @@ export type Rows = { [K in TableName]: Tables[K][] };
 export const EMPTY_ROWS = (): Rows => ({
   terms: [], courses: [], syllabi: [], grade_components: [], assignments: [], exams: [],
   exam_coverage: [], quizzes: [], quiz_coverage: [], course_policies: [], absences: [], topics: [], notes: [], cards: [],
-  card_reviews: [], questions: [], generation_events: [], waiting_on: [], metric_events: [],
+  card_reviews: [], questions: [], generation_events: [], waiting_on: [], metric_events: [], learn_progress: [],
 });
 
 /** Tables whose rows carry a user_id column. */
 export const USER_TABLES = new Set<TableName>([
-  'terms', 'courses', 'notes', 'cards', 'questions', 'generation_events', 'waiting_on', 'metric_events',
+  'terms', 'courses', 'notes', 'cards', 'questions', 'generation_events', 'waiting_on', 'metric_events', 'learn_progress',
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,6 +28,7 @@ type AnyRow = Record<string, any>;
 const KEY_COLS: Partial<Record<TableName, string[]>> = {
   exam_coverage: ['exam_id', 'topic_id'],
   course_policies: ['course_id'],
+  learn_progress: ['user_id', 'scope_key'],
 };
 
 export function keyCols(table: TableName): string[] {
@@ -33,6 +37,10 @@ export function keyCols(table: TableName): string[] {
 
 export function matchOf(table: TableName, row: AnyRow): AnyRow {
   return Object.fromEntries(keyCols(table).map((c) => [c, row[c]]));
+}
+
+function keyOf(table: TableName, row: AnyRow): string {
+  return keyCols(table).map((c) => String(row[c])).join('\u0000');
 }
 
 export interface Backend {
@@ -56,12 +64,109 @@ export interface OutboxStorage {
   save(ops: Op[]): Promise<void>;
 }
 
-/** Errors that will never succeed on retry (constraint / RLS / bad request), as opposed to being offline. */
-function isPermanent(err: unknown): boolean {
-  const e = err as { status?: number; code?: string } | undefined;
-  if (!e) return false;
-  if (typeof e.status === 'number' && e.status >= 400 && e.status < 500 && e.status !== 408 && e.status !== 429) return true;
-  return typeof e.code === 'string' && /^\d{5}$/.test(e.code); // Postgres SQLSTATE
+/** A failed backend call: the HTTP status (0 = never reached the server) and the Postgres/PostgREST code. */
+export interface SyncFailure {
+  status?: number;
+  code?: string;
+  message?: string;
+}
+
+/**
+ * What to do with a write the server didn't take:
+ *   done  — an insert hit a duplicate key: the row is already there (an earlier attempt landed)
+ *   drop  — the data itself can never be accepted (constraint, row-level security, bad value)
+ *   retry — offline, timeout, rate limit, server hiccup, expired sign-in: quietly try again later
+ *   stuck — anything else, e.g. the server's schema is behind the app. Keep it (and everything after
+ *           it, in order) and tell the student, rather than throwing their work away.
+ */
+export function classifyFailure(op: Op['op'], err: unknown): 'done' | 'drop' | 'retry' | 'stuck' {
+  const e = (err ?? {}) as SyncFailure;
+  const code = typeof e.code === 'string' ? e.code : '';
+  if (code === '23505' && op === 'insert') return 'done';
+  // Postgres SQLSTATE class 22 (bad data), 23 (integrity), 42501 (row-level security)
+  if (/^(22|23)[0-9A-Z]{3}$/.test(code) || code === '42501') return 'drop';
+  const status = typeof e.status === 'number' ? e.status : 0;
+  if (status === 0 || status === 401 || status === 408 || status === 429 || status >= 500) return 'retry';
+  return 'stuck';
+}
+
+/** Replays writes on top of `rows`. Idempotent: an insert whose row is already there is skipped. */
+export function applyOps(rows: Rows, ops: Op[]): Rows {
+  if (ops.length === 0) return rows;
+  const out = { ...rows } as Record<TableName, AnyRow[]>;
+  for (const op of ops) {
+    const t = op.table;
+    const list = out[t] ?? [];
+    if (op.op === 'insert') {
+      const have = new Set(list.map((r) => keyOf(t, r)));
+      const fresh = op.rows.filter((r) => !have.has(keyOf(t, r)));
+      if (fresh.length > 0) out[t] = [...list, ...fresh];
+    } else if (op.op === 'update') {
+      out[t] = list.map((r) => (sameKey(t, r, op.match) ? { ...r, ...op.patch } : r));
+    } else {
+      out[t] = list.filter((r) => !sameKey(t, r, op.match));
+    }
+  }
+  return out as unknown as Rows;
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a as AnyRow);
+  const kb = Object.keys(b as AnyRow);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => deepEqual((a as AnyRow)[k], (b as AnyRow)[k]));
+}
+
+/**
+ * Folds freshly loaded rows into what's on screen: unchanged rows keep their identity and their place
+ * (new ones go at the end), and a table with no changes keeps its array — so a refresh that finds
+ * nothing new re-renders nothing.
+ */
+export function reconcile(prev: Rows, next: Rows): Rows {
+  let changed = false;
+  const out = { ...prev } as Record<TableName, AnyRow[]>;
+  for (const t of Object.keys(next) as TableName[]) {
+    const before = (prev[t] ?? []) as AnyRow[];
+    const incoming = new Map((next[t] as AnyRow[]).map((r) => [keyOf(t, r), r]));
+    const merged: AnyRow[] = [];
+    let same = true;
+    for (const p of before) {
+      const k = keyOf(t, p);
+      const n = incoming.get(k);
+      if (!n) {
+        same = false;
+        continue;
+      }
+      incoming.delete(k);
+      if (deepEqual(n, p)) merged.push(p);
+      else {
+        merged.push(n);
+        same = false;
+      }
+    }
+    for (const n of incoming.values()) {
+      merged.push(n);
+      same = false;
+    }
+    if (!same) {
+      out[t] = merged;
+      changed = true;
+    }
+  }
+  return changed ? (out as unknown as Rows) : prev;
+}
+
+export interface SyncStatus {
+  mode: 'local' | 'supabase' | null;
+  /** Writes made on this device that the server hasn't confirmed yet. */
+  pending: number;
+  /** Why those writes aren't going through, when it isn't just being offline. */
+  error: string | null;
+  /** Last time this device finished pulling from the server (ms since epoch). */
+  lastSyncedAt: number | null;
 }
 
 class Store {
@@ -70,9 +175,15 @@ class Store {
   private listeners = new Set<() => void>();
   private outbox: Op[] = [];
   private outboxStorage: OutboxStorage | null = null;
-  private flushing = false;
+  private flushing: Promise<void> | null = null;
+  private refreshing: Promise<void> | null = null;
+  /** While a refresh is loading: every change made meanwhile, replayed on top of what it loads. */
+  private journal: Array<(rows: Rows) => Rows> | null = null;
+  private status: SyncStatus = { mode: null, pending: 0, error: null, lastSyncedAt: null };
   ready = false;
   pendingWrites = 0;
+  syncError: string | null = null;
+  lastSyncedAt: number | null = null;
 
   get mode(): 'local' | 'supabase' | null {
     return this.backend?.mode ?? null;
@@ -83,12 +194,18 @@ class Store {
 
   async init(backend: Backend, outbox?: OutboxStorage) {
     this.backend = backend;
+    this.flushing = null; // a flush/refresh still running for a previous account stops by itself
+    this.refreshing = null;
     this.outboxStorage = outbox ?? null;
     this.outbox = outbox ? await outbox.load() : [];
+    this.pendingWrites = this.outbox.length;
+    this.syncError = null;
     this.rows = EMPTY_ROWS();
-    // Push anything left from a previous offline session before pulling fresh data.
+    // Push anything left from a previous session before pulling fresh data.
     await this.flush();
-    this.rows = await backend.loadAll();
+    // Whatever still hasn't gone through is shown anyway — it's queued, not lost.
+    this.rows = applyOps(await backend.loadAll(), this.outbox);
+    if (backend.mode === 'supabase') this.lastSyncedAt = Date.now();
     this.ready = true;
     this.emit();
   }
@@ -98,6 +215,12 @@ class Store {
     this.backend = null;
     this.ready = false;
     this.outbox = [];
+    this.flushing = null;
+    this.refreshing = null;
+    this.journal = null;
+    this.pendingWrites = 0;
+    this.syncError = null;
+    this.lastSyncedAt = null;
     this.emit();
   }
 
@@ -116,7 +239,19 @@ class Store {
     };
   };
   private emit() {
+    const s = this.status;
+    if (s.mode !== this.mode || s.pending !== this.pendingWrites || s.error !== this.syncError || s.lastSyncedAt !== this.lastSyncedAt) {
+      this.status = { mode: this.mode, pending: this.pendingWrites, error: this.syncError, lastSyncedAt: this.lastSyncedAt };
+    }
     for (const l of this.listeners) l();
+  }
+  syncStatus = (): SyncStatus => this.status;
+
+  /** Applies a change to memory now, and again on top of any refresh that's loading meanwhile. */
+  private change(fn: (rows: Rows) => Rows) {
+    this.rows = fn(this.rows);
+    this.journal?.push(fn);
+    this.emit();
   }
 
   // ---- writes -----------------------------------------------------------
@@ -130,48 +265,39 @@ class Store {
     const withUser = USER_TABLES.has(table)
       ? rows.map((r) => ({ ...(r as AnyRow), user_id: this.userId }) as unknown as Tables[K])
       : rows;
-    this.rows = { ...this.rows, [table]: [...this.rows[table], ...withUser] };
-    this.emit();
-    this.write({ op: 'insert', table, rows: withUser as unknown as AnyRow[] });
+    this.apply({ op: 'insert', table, rows: withUser as unknown as AnyRow[] });
     return withUser;
   }
 
   update<K extends TableName>(table: K, row: Tables[K], patch: Partial<Tables[K]>): Tables[K] {
     const match = matchOf(table, row as AnyRow);
-    // Merge onto the latest stored row, not the caller's (possibly stale) copy.
-    const latest = (this.rows[table] as Tables[K][]).find((r) => sameKey(table, r as AnyRow, match)) ?? row;
-    const next = { ...latest, ...patch } as Tables[K];
-    this.rows = {
-      ...this.rows,
-      [table]: this.rows[table].map((r) => (sameKey(table, r as AnyRow, match) ? next : r)),
-    };
-    this.emit();
-    this.write({ op: 'update', table, match, patch: patch as AnyRow });
-    return next;
+    this.apply({ op: 'update', table, match, patch: patch as AnyRow });
+    // The merged row, built on the latest stored copy rather than the caller's (possibly stale) one.
+    return ((this.rows[table] as Tables[K][]).find((r) => sameKey(table, r as AnyRow, match)) ?? { ...row, ...patch }) as Tables[K];
   }
 
   remove<K extends TableName>(table: K, row: Tables[K]) {
-    const match = matchOf(table, row as AnyRow);
-    this.rows = { ...this.rows, [table]: this.rows[table].filter((r) => !sameKey(table, r as AnyRow, match)) };
-    this.emit();
-    this.write({ op: 'remove', table, match });
+    this.apply({ op: 'remove', table, match: matchOf(table, row as AnyRow) });
   }
 
   /** Drop rows from memory only (their deletion happens server-side via ON DELETE CASCADE). */
   purgeLocal<K extends TableName>(table: K, predicate: (r: Tables[K]) => boolean) {
-    this.rows = { ...this.rows, [table]: this.rows[table].filter((r) => !predicate(r)) };
-    this.emit();
+    this.change((rows) => ({ ...rows, [table]: rows[table].filter((r) => !predicate(r)) }));
     this.backend?.persist?.(this.rows);
   }
 
   /** Patch rows in memory only (server-side FKs do the equivalent, e.g. ON DELETE SET NULL). */
   patchLocal<K extends TableName>(table: K, predicate: (r: Tables[K]) => boolean, patch: Partial<Tables[K]>) {
-    this.rows = {
-      ...this.rows,
-      [table]: this.rows[table].map((r) => (predicate(r) ? ({ ...r, ...patch } as Tables[K]) : r)),
-    };
-    this.emit();
+    this.change((rows) => ({
+      ...rows,
+      [table]: rows[table].map((r) => (predicate(r) ? ({ ...r, ...patch } as Tables[K]) : r)),
+    }));
     this.backend?.persist?.(this.rows);
+  }
+
+  private apply(op: Op) {
+    this.change((rows) => applyOps(rows, [op]));
+    this.write(op);
   }
 
   // ---- persistence ------------------------------------------------------
@@ -183,6 +309,7 @@ class Store {
       return;
     }
     this.outbox.push(op);
+    this.pendingWrites = this.outbox.length;
     void this.saveOutbox();
     void this.flush();
   }
@@ -195,13 +322,22 @@ class Store {
     }
   }
 
-  /** Send queued writes in order. Stops at the first network failure; drops permanently-bad ops. */
-  async flush() {
+  /**
+   * Send queued writes in order. Stops at the first one that can't go through yet; drops permanently-bad
+   * ones. A call while a flush is running waits for that one (which also sends anything queued meanwhile).
+   */
+  flush(): Promise<void> {
     const b = this.backend;
-    if (!b || b.mode === 'local' || this.flushing) return;
-    this.flushing = true;
+    if (!b || b.mode === 'local') return Promise.resolve();
+    this.flushing ??= this.send(b).finally(() => {
+      this.flushing = null;
+    });
+    return this.flushing;
+  }
+
+  private async send(b: Backend) {
     try {
-      while (this.outbox.length > 0) {
+      while (this.outbox.length > 0 && this.backend === b) {
         const op = this.outbox[0];
         this.pendingWrites = this.outbox.length;
         try {
@@ -209,21 +345,73 @@ class Store {
           else if (op.op === 'update') await b.update(op.table, op.match, op.patch);
           else await b.remove(op.table, op.match);
           this.outbox.shift();
+          this.syncError = null;
         } catch (err) {
-          if (isPermanent(err)) {
+          const verdict = classifyFailure(op.op, err);
+          if (verdict === 'done') {
+            this.outbox.shift();
+          } else if (verdict === 'drop') {
             console.warn('[store] dropping rejected write', op.op, op.table, (err as Error)?.message);
             this.outbox.shift();
           } else {
-            break; // offline — try again on next write / app foreground
+            if (verdict === 'stuck') {
+              this.syncError = (err as Error)?.message || `The server turned down a change to ${op.table}.`;
+              console.warn('[store] write not accepted; keeping it queued', op.op, op.table, this.syncError);
+            }
+            break; // try again on the next write, refresh, or app foreground
           }
         }
       }
     } finally {
-      this.pendingWrites = this.outbox.length;
-      this.flushing = false;
-      await this.saveOutbox();
-      this.emit();
+      if (this.backend === b) {
+        this.pendingWrites = this.outbox.length;
+        if (this.outbox.length === 0) this.syncError = null;
+        await this.saveOutbox();
+        this.emit();
+      }
     }
+  }
+
+  /**
+   * Push ours, then pull everything and fold in what other devices changed. Changes made on this
+   * device while it loads — and anything still queued — are replayed on top, so nothing on screen
+   * goes backwards. Overlapping calls share one run; failures (offline) leave the screen as it was.
+   */
+  refresh(): Promise<void> {
+    if (this.backend?.mode !== 'supabase' || !this.ready) return Promise.resolve();
+    this.refreshing ??= this.pull().finally(() => {
+      this.refreshing = null;
+    });
+    return this.refreshing;
+  }
+
+  private async pull() {
+    const b = this.backend!;
+    this.journal = [];
+    try {
+      await this.flush();
+      const loaded = await b.loadAll();
+      if (this.backend !== b || !this.journal) return; // signed out or switched accounts meanwhile
+      const next = this.journal.reduce((rows, fn) => fn(rows), applyOps(loaded, this.outbox));
+      this.rows = reconcile(this.rows, next);
+      this.lastSyncedAt = Date.now();
+      this.emit();
+    } catch {
+      /* offline or the server is unreachable — keep what's on screen */
+    } finally {
+      if (this.backend === b) this.journal = null;
+    }
+  }
+
+  /** Last resort for a write the server will never take: forget it so the rest can sync. */
+  async discardStuckWrite() {
+    if (this.outbox.length === 0) return;
+    this.outbox.shift();
+    this.syncError = null;
+    this.pendingWrites = this.outbox.length;
+    await this.saveOutbox();
+    this.emit();
+    await this.refresh();
   }
 }
 
@@ -245,4 +433,9 @@ export function useTable<K extends TableName>(table: K): Tables[K][] {
 /** Re-render on any change; returns the whole snapshot. */
 export function useStoreSnapshot(): Rows {
   return useSyncExternalStore(store.subscribe, () => store.snapshot(), () => store.snapshot());
+}
+
+/** Whether this device's changes are reaching the account. */
+export function useSyncStatus(): SyncStatus {
+  return useSyncExternalStore(store.subscribe, store.syncStatus, store.syncStatus);
 }

@@ -10,6 +10,8 @@ import { Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { ObligationRow, dueLabel, impactLabel } from '@/ui/rows';
 import { store } from '@/data/store';
 import { ImportOffer } from '@/ui/ImportOffer';
+import { SyncProblemBanner } from '@/ui/SyncBanner';
+import { TodayPlan } from '@/ui/TodayPlan';
 import { Columns, useLayout } from '@/ui/layout';
 import { useColors } from '@/ui/theme';
 
@@ -52,7 +54,9 @@ export default function ComingUp() {
   if (sem.rows.courses.length === 0) {
     return (
       <Screen maxWidth={640}>
+        <SyncProblemBanner />
         <ImportOffer />
+        <TodayPlan prep={sem.prep} now={now} tz={tz} pace={sem.pace} />
         <View style={{ height: isDesktop ? 48 : 24 }} />
         <T variant="big">Your semester{'\n'}builds itself.</T>
         <T muted>Drop in a syllabus and every deadline, exam, grade weight and late policy shows up here — no typing.</T>
@@ -78,6 +82,8 @@ export default function ComingUp() {
       </T>
     </Card>
   ) : null;
+
+  const todayPlan = <TodayPlan prep={sem.prep} now={now} tz={tz} pace={sem.pace} />;
 
   const alerts = (
     <>
@@ -144,12 +150,14 @@ export default function ComingUp() {
 
   return (
     <Screen>
+      <SyncProblemBanner />
       <ImportOffer />
       {isDesktop && (crunch || sem.inboxCount > 0 || dueWaiting.length > 0 || pastDue > 0) ? (
-        <Columns main={<>{focus}{timeline}</>} side={alerts} sideWidth={340} />
+        <Columns main={<>{focus}{todayPlan}{timeline}</>} side={alerts} sideWidth={340} />
       ) : (
         <>
           {focus}
+          {todayPlan}
           {alerts}
           {timeline}
         </>

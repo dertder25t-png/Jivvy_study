@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
-import { prefs } from '@/data/prefs';
 import type { PocketRecommendation, StudyDirection } from '@/core/learning';
 
 const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = [
@@ -14,38 +13,44 @@ const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = 
 interface PocketSetupProps {
   recommendation: PocketRecommendation;
   totalCards: number;
-  direction: StudyDirection;
-  onDirectionChange: (d: StudyDirection) => void;
-  onStart: (size: number) => void;
+  initialSize: number;
+  initialDirection: StudyDirection;
+  onStart: (size: number, direction: StudyDirection) => void;
+  /** Present when changing settings mid-set (rather than the first time): progress so far + ways out. */
+  editing?: {
+    learned: number;
+    onRestart: () => void;
+    onCancel: () => void;
+  };
 }
 
-export default function PocketSetup({ recommendation, totalCards, direction, onDirectionChange, onStart }: PocketSetupProps) {
-  const remembered = prefs.get().learnPocketSize;
-  const [selected, setSelected] = useState(remembered && remembered <= totalCards ? remembered : recommendation.recommended);
+/** Asked once per set. After that Learn goes straight to your cards; this only comes back from "Options". */
+export default function PocketSetup({ recommendation, totalCards, initialSize, initialDirection, onStart, editing }: PocketSetupProps) {
+  const [selected, setSelected] = useState(Math.max(1, Math.min(initialSize, totalCards)));
+  const [direction, setDirection] = useState<StudyDirection>(initialDirection);
   const c = useColors();
 
-  const choose = (size: number) => {
-    setSelected(size);
-    prefs.set({ learnPocketSize: size });
-  };
-
-  const presets = [3, 5, 10, 15, 20, 30, 50].filter((n) => n <= totalCards);
+  const presets = [...new Set([3, 5, 10, 15, 20, 30, 50, selected])].filter((n) => n <= totalCards).sort((a, b) => a - b);
 
   return (
     <Screen maxWidth={760}
       footer={
-        <Button
-          title={`Study ${selected} cards`}
-          onPress={() => onStart(selected)}
-          variant="primary"
-        />
+        <View style={{ gap: 8 }}>
+          <Button
+            title={editing ? 'Save and keep going' : `Study ${selected} cards at a time`}
+            onPress={() => onStart(selected, direction)}
+            variant="primary"
+          />
+          {editing ? <Button title="Cancel" variant="ghost" onPress={editing.onCancel} /> : null}
+        </View>
       }
     >
       <View style={{ gap: 12 }}>
-        <Section title="Learn Mode">
+        <Section title={editing ? 'Learn settings' : 'Learn Mode'}>
           <T>
-            Type each answer twice: first while you can see it, then from memory. Great for
-            retention through active recall!
+            {editing
+              ? `You've learned ${editing.learned} of ${totalCards} cards in this set, and that progress stays. A new pocket size starts with your next pocket.`
+              : "Type each answer twice: first while you can see it, then from memory. You'll only set this up once — next time Learn picks up right where you left off."}
           </T>
         </Section>
 
@@ -64,7 +69,7 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
               {presets.map((size) => (
                 <Pressable
                   key={size}
-                  onPress={() => choose(size)}
+                  onPress={() => setSelected(size)}
                   style={{
                     paddingHorizontal: 12,
                     paddingVertical: 8,
@@ -94,30 +99,43 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
             <T variant="heading">What to type</T>
             <Row style={{ flexWrap: 'wrap' }}>
               {DIRECTIONS.map((d) => (
-                <Chip key={d.key} label={d.label} selected={direction === d.key} onPress={() => onDirectionChange(d.key)} />
+                <Chip key={d.key} label={d.label} selected={direction === d.key} onPress={() => setDirection(d.key)} />
               ))}
             </Row>
             <T variant="small" muted>{DIRECTIONS.find((d) => d.key === direction)?.hint}</T>
           </View>
         </Card>
 
-        <Card>
-          <View style={{ gap: 8 }}>
-            <T variant="heading">How it works</T>
-            <T variant="small" style={{ lineHeight: 20 }}>
-              <T variant="small" style={{ fontWeight: '600' }}>Phase 1: </T>
-              The card asks a question and shows you the answer. Copy the answer while it's visible.
-            </T>
-            <T variant="small" style={{ lineHeight: 20 }}>
-              <T variant="small" style={{ fontWeight: '600' }}>Phase 2: </T>
-              The answer hides. Type it again from memory to test your recall.
-            </T>
-            <T variant="small" style={{ lineHeight: 20 }}>
-              <T variant="small" style={{ fontWeight: '600' }}>Rate yourself: </T>
-              Easy, Good, or Struggling. This helps track progress.
-            </T>
-          </View>
-        </Card>
+        {editing ? (
+          <Card>
+            <View style={{ gap: 8 }}>
+              <T variant="heading">Start over</T>
+              <T variant="small" muted>
+                Go back to the first card and learn the whole set again. Your review history (and when cards come up in
+                Review) is kept.
+              </T>
+              <Button title="Start this set over" variant="secondary" small onPress={editing.onRestart} style={{ alignSelf: 'flex-start' }} />
+            </View>
+          </Card>
+        ) : (
+          <Card>
+            <View style={{ gap: 8 }}>
+              <T variant="heading">How it works</T>
+              <T variant="small" style={{ lineHeight: 20 }}>
+                <T variant="small" style={{ fontWeight: '600' }}>Phase 1: </T>
+                The card asks a question and shows you the answer. Copy the answer while it's visible.
+              </T>
+              <T variant="small" style={{ lineHeight: 20 }}>
+                <T variant="small" style={{ fontWeight: '600' }}>Phase 2: </T>
+                The answer hides. Type it again from memory to test your recall.
+              </T>
+              <T variant="small" style={{ lineHeight: 20 }}>
+                <T variant="small" style={{ fontWeight: '600' }}>Rate yourself: </T>
+                Easy, Good, or Struggling. This helps track progress.
+              </T>
+            </View>
+          </Card>
+        )}
       </View>
     </Screen>
   );

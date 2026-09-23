@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { TableName } from '@/types/db';
-import { EMPTY_ROWS, keyCols, type Backend, type Op, type OutboxStorage, type Rows } from './store';
+import { EMPTY_ROWS, keyCols, type Backend, type Op, type OutboxStorage, type Rows, type SyncFailure } from './store';
 
 // ---------------------------------------------------------------------------
 // Local backend: everything lives on this device (demo mode / no account).
@@ -52,7 +52,7 @@ export async function clearLocalData() {
 const TABLES: TableName[] = [
   'terms', 'courses', 'syllabi', 'grade_components', 'assignments', 'exams', 'exam_coverage',
   'quizzes', 'quiz_coverage', 'course_policies', 'absences', 'topics', 'notes', 'cards', 'card_reviews',
-  'questions', 'generation_events', 'waiting_on', 'metric_events',
+  'questions', 'generation_events', 'waiting_on', 'metric_events', 'learn_progress',
 ];
 
 // Big text columns we don't need to pull on every launch.
@@ -60,7 +60,30 @@ const OMIT_ON_LOAD: Partial<Record<TableName, string>> = {
   syllabi: 'id,course_id,file_path,content_hash,parse_status,parse_version,parsed_at',
 };
 
+interface Result {
+  error: { message: string; code?: string } | null;
+  status: number;
+}
+
+/** A PostgREST error as a thrown Error that keeps the HTTP status (0 = never reached the server) and code. */
+function failure(res: Result): Error & SyncFailure {
+  return Object.assign(new Error(res.error?.message ?? 'Request failed'), { status: res.status, code: res.error?.code });
+}
+
+/** The table isn't on the server yet (a migration still to run) — as opposed to any other failure. */
+const isMissingTable = (code: string | undefined) => code === 'PGRST205' || code === '42P01';
+
 export function createSupabaseBackend(client: SupabaseClient, userId: string): Backend {
+  /** Runs a request; if the sign-in expired while the app sat in the background, renews it and tries once more. */
+  const run = async (request: () => PromiseLike<Result>) => {
+    let res = await request();
+    if (res.error && res.status === 401) {
+      await client.auth.refreshSession().catch(() => {});
+      res = await request();
+    }
+    if (res.error) throw failure(res);
+  };
+
   return {
     mode: 'supabase',
     userId,
@@ -71,13 +94,19 @@ export function createSupabaseBackend(client: SupabaseClient, userId: string): B
           // Page through — PostgREST caps responses at 1000 rows.
           const rows: unknown[] = [];
           for (let from = 0; ; from += 1000) {
-            const { data, error } = await client
+            const res = await client
               .from(t)
               .select(OMIT_ON_LOAD[t] ?? '*')
               .range(from, from + 999);
-            if (error) throw error;
-            rows.push(...(data ?? []));
-            if (!data || data.length < 1000) break;
+            if (res.error) {
+              if (isMissingTable(res.error.code)) {
+                console.warn(`[sync] the server has no "${t}" table yet — run the latest migration`);
+                break;
+              }
+              throw failure(res);
+            }
+            rows.push(...(res.data ?? []));
+            if (!res.data || res.data.length < 1000) break;
           }
           out[t] = rows;
         }),
@@ -85,20 +114,21 @@ export function createSupabaseBackend(client: SupabaseClient, userId: string): B
       return out as unknown as Rows;
     },
     async insert(table, rows) {
-      const { error } = await client.from(table).insert(rows);
-      if (error) throw error;
+      await run(() => client.from(table).insert(rows));
     },
     async update(table, match, patch) {
-      let q = client.from(table).update(patch);
-      for (const c of keyCols(table)) q = q.eq(c, match[c] as string);
-      const { error } = await q;
-      if (error) throw error;
+      await run(() => {
+        let q = client.from(table).update(patch);
+        for (const c of keyCols(table)) q = q.eq(c, match[c] as string);
+        return q;
+      });
     },
     async remove(table, match) {
-      let q = client.from(table).delete();
-      for (const c of keyCols(table)) q = q.eq(c, match[c] as string);
-      const { error } = await q;
-      if (error) throw error;
+      await run(() => {
+        let q = client.from(table).delete();
+        for (const c of keyCols(table)) q = q.eq(c, match[c] as string);
+        return q;
+      });
     },
   };
 }

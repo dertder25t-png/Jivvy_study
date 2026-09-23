@@ -25,9 +25,11 @@ capture a note with **+**, open a note → **Make flashcards**, the **Crunch for
 
 ## Run it for real (Supabase)
 
-1. Create a Supabase project. Run [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql)
-   (SQL editor, or `supabase db push`). It creates every table from spec §4, RLS on all of them, and the
-   private `syllabi` storage bucket.
+1. Create a Supabase project. Run **every** file in [`supabase/migrations/`](supabase/migrations) in order
+   (SQL editor, or `supabase db push`). `0001_init.sql` creates every table from spec §4, RLS on all of them, and
+   the private `syllabi` storage bucket; the later ones add columns the app writes. **Run new migrations before
+   deploying the app that needs them** — if the server is missing a column, saves are held on the device (and
+   the app says so) until it's there.
 2. In Supabase → Authentication → Providers, enable **Email** (the app uses one-time codes, no passwords).
    Make sure the email template includes the `{{ .Token }}` code.
 3. Deploy the edge functions (no API keys needed):
@@ -97,6 +99,23 @@ Optional guidance, never a limit: how long due cards take at *your* pace, and fo
 many minutes of card review are worth spending overall and per day. **Studying early is safe:** an early "good"
 or "easy" leaves a card's next review exactly where it was, so cramming never pushes reviews out.
 Logic: `src/core/session.ts`, `src/core/scheduling.ts` (`isEarly`); UI: `app/cards/setup.tsx`, `app/cards/review.tsx`.
+
+**Learn mode remembers your place.** It asks for pocket size and what to type once per set, then always resumes at
+the next card you haven't finished — on any device — until you **Start this set over** (under **Options**).
+Logic: `src/core/learning.ts`; progress is the synced `learn_progress` table.
+
+**A plan for every test.** Give a set a test date (or have a syllabus exam with cards) and each day gets its share:
+learn some new cards, review what's due, and go through everything the day before. It shows as **Today's study
+plan** on Home and Study, fills in the **study calendar**, and sends one reminder a day at your **study time**
+(Settings). Logic: `src/core/testPrep.ts`.
+
+## Syncing across devices
+
+Every change is saved on the device first and sent to your account right away; if a send fails it waits in an
+outbox and is still shown (never hidden) until the server has it. The app pulls other devices' changes when it
+opens or comes back to the front, every 45 s while on screen, and when the connection returns. Study settings
+(daily minutes, study time, Learn defaults) follow the account too. If the server keeps refusing a change, a
+banner says so and **Settings → Data** shows why. Logic: `src/data/store.ts`, `src/data/sync.ts`, `src/data/prefsSync.ts`.
 
 ## Accounts
 

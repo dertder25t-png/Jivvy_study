@@ -7,10 +7,15 @@ import { prefs, usePrefs } from '@/data/prefs';
 import { store } from '@/data/store';
 import { useSemester } from '@/data/derived';
 import { DAILY_CAP } from '@/core/notifications';
-import { ensurePermission } from '@/notifications/schedule';
+import { ensurePermission, webPermission } from '@/notifications/schedule';
 import { Button, Card, Chip, Field, Row, Screen, Section, T } from '@/ui/components';
+import { SyncStatusPanel } from '@/ui/SyncBanner';
 
 const MINUTES = [45, 90, 120, 180];
+const STUDY_TIMES = [
+  { value: '07:00', label: '7am' }, { value: '12:00', label: 'Noon' }, { value: '16:00', label: '4pm' },
+  { value: '18:00', label: '6pm' }, { value: '20:00', label: '8pm' }, { value: '22:00', label: '10pm' },
+];
 
 function keyLabel(key: string): string {
   if (key === ' ') return 'Space';
@@ -24,6 +29,7 @@ export default function Settings() {
   const [tz, setTz] = useState(p.tz);
   const [msg, setMsg] = useState<string | null>(null);
   const [capturingShortcut, setCapturingShortcut] = useState(false);
+  const [webPerm, setWebPerm] = useState(webPermission);
 
   useEffect(() => {
     if (!capturingShortcut || Platform.OS !== 'web') return;
@@ -39,9 +45,15 @@ export default function Settings() {
   const toggleNotifications = async (on: boolean) => {
     if (on) {
       const ok = await ensurePermission();
+      setWebPerm(webPermission());
       if (!ok && Platform.OS !== 'web') setMsg('Notifications are blocked for this app in your device settings.');
     }
     prefs.set({ notificationsEnabled: on });
+  };
+
+  const allowBrowser = async () => {
+    await ensurePermission();
+    setWebPerm(webPermission());
   };
 
   const resetLocal = () => {
@@ -73,6 +85,10 @@ export default function Settings() {
           <Row style={{ flexWrap: 'wrap' }}>
             {MINUTES.map((m) => <Chip key={m} label={`${m} min`} selected={p.dailyMinutes === m} onPress={() => prefs.set({ dailyMinutes: m })} />)}
           </Row>
+          <T variant="small" muted>When do you usually study? Your daily flashcard plan for upcoming tests is sent then.</T>
+          <Row style={{ flexWrap: 'wrap' }}>
+            {STUDY_TIMES.map((t) => <Chip key={t.value} label={t.label} selected={p.studyTime === t.value} onPress={() => prefs.set({ studyTime: t.value })} />)}
+          </Row>
         </Card>
       </Section>
 
@@ -83,10 +99,24 @@ export default function Settings() {
             <Switch value={p.notificationsEnabled} onValueChange={toggleNotifications} />
           </Row>
           <T variant="small" muted>
-            At most {DAILY_CAP} a day, ranked by how much your grade depends on them. Start-date nudges, exam review sessions,
-            closing late windows, and crunch-week heads-ups. Never streak reminders, never “you haven’t opened the app.”
+            At most {DAILY_CAP} a day, ranked by how much your grade depends on them. Your daily study plan for upcoming tests
+            (at your study time), start-date nudges, exam review sessions, closing late windows, and crunch-week heads-ups. Never
+            streak reminders, never “you haven’t opened the app.”
           </T>
-          {Platform.OS === 'web' ? <T variant="small" muted>Reminders work in the phone app, not the web preview.</T> : null}
+          {Platform.OS === 'web' ? (
+            webPerm === 'granted' ? (
+              <T variant="small" muted>In the web app, reminders pop up while the app is open in a browser tab.</T>
+            ) : webPerm === 'default' ? (
+              <Row style={{ flexWrap: 'wrap' }}>
+                <T variant="small" muted style={{ flex: 1 }}>Let this browser show reminders while the app is open in a tab.</T>
+                <Button title="Allow browser notifications" small variant="secondary" onPress={allowBrowser} />
+              </Row>
+            ) : webPerm === 'denied' ? (
+              <T variant="small" muted>Notifications are blocked for this site in your browser settings.</T>
+            ) : (
+              <T variant="small" muted>This browser can't show reminders — they work in the phone app.</T>
+            )
+          ) : null}
           <T variant="small">{sem.notifications.length} planned over the next two weeks.</T>
         </Card>
       </Section>
@@ -119,11 +149,7 @@ export default function Settings() {
 
       <Section title="Data">
         <Card>
-          <T variant="small" muted>
-            {store.mode === 'supabase'
-              ? `Synced to your account.${store.pendingWrites > 0 ? ` ${store.pendingWrites} change(s) waiting to sync.` : ''}`
-              : 'Demo mode — everything is stored on this device only.'}
-          </T>
+          <SyncStatusPanel />
           {store.mode === 'local' ? (
             <>
               <Button title="Load sample semester" variant="secondary" onPress={() => { addSampleSemester(new Date()); router.replace('/'); }} />
