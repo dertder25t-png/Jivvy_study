@@ -299,6 +299,36 @@ export interface MetricEvent {
   created_at: ISODateTime;
 }
 
+export type LearnDirection = 'term_to_def' | 'def_to_term' | 'mixed';
+export type LearnGrade = 'easy' | 'good' | 'struggling';
+
+/** How one card went in Learn mode this round. */
+export interface LearnMark {
+  grade: LearnGrade;
+  /** Share of the answer's words recalled from memory, 0-1. */
+  accuracy: number;
+  at: ISODateTime;
+}
+
+/**
+ * Where you are in Learn mode for one set of cards, so it picks up where you left off on any
+ * device. One row per (user, scope): `scope_key` names the cards ('note:<id>', 'exam:<id>', …).
+ */
+export interface LearnProgress {
+  user_id: string;
+  scope_key: string;
+  pocket_size: number;
+  direction: LearnDirection;
+  /** Cards finished this round, by card id. */
+  done: Record<string, LearnMark>;
+  /** The pocket being worked through, in order (card ids). */
+  pocket: string[];
+  /** Goes up each time you start the set over. */
+  round: number;
+  started_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 /** Every client-visible table, keyed by its Postgres name. */
 export interface Tables {
   terms: Term;
@@ -320,6 +350,7 @@ export interface Tables {
   generation_events: GenerationEvent;
   waiting_on: WaitingOn;
   metric_events: MetricEvent;
+  learn_progress: LearnProgress;
 }
 
 export type TableName = keyof Tables;

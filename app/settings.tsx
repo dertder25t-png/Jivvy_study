@@ -9,6 +9,7 @@ import { useSemester } from '@/data/derived';
 import { DAILY_CAP } from '@/core/notifications';
 import { ensurePermission } from '@/notifications/schedule';
 import { Button, Card, Chip, Field, Row, Screen, Section, T } from '@/ui/components';
+import { SyncStatusPanel } from '@/ui/SyncBanner';
 
 const MINUTES = [45, 90, 120, 180];
 
@@ -119,11 +120,7 @@ export default function Settings() {
 
       <Section title="Data">
         <Card>
-          <T variant="small" muted>
-            {store.mode === 'supabase'
-              ? `Synced to your account.${store.pendingWrites > 0 ? ` ${store.pendingWrites} change(s) waiting to sync.` : ''}`
-              : 'Demo mode — everything is stored on this device only.'}
-          </T>
+          <SyncStatusPanel />
           {store.mode === 'local' ? (
             <>
               <Button title="Load sample semester" variant="secondary" onPress={() => { addSampleSemester(new Date()); router.replace('/'); }} />

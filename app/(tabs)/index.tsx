@@ -10,6 +10,7 @@ import { Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { ObligationRow, dueLabel, impactLabel } from '@/ui/rows';
 import { store } from '@/data/store';
 import { ImportOffer } from '@/ui/ImportOffer';
+import { SyncProblemBanner } from '@/ui/SyncBanner';
 import { Columns, useLayout } from '@/ui/layout';
 import { useColors } from '@/ui/theme';
 
@@ -52,6 +53,7 @@ export default function ComingUp() {
   if (sem.rows.courses.length === 0) {
     return (
       <Screen maxWidth={640}>
+        <SyncProblemBanner />
         <ImportOffer />
         <View style={{ height: isDesktop ? 48 : 24 }} />
         <T variant="big">Your semester{'\n'}builds itself.</T>
@@ -144,6 +146,7 @@ export default function ComingUp() {
 
   return (
     <Screen>
+      <SyncProblemBanner />
       <ImportOffer />
       {isDesktop && (crunch || sem.inboxCount > 0 || dueWaiting.length > 0 || pastDue > 0) ? (
         <Columns main={<>{focus}{timeline}</>} side={alerts} sideWidth={340} />

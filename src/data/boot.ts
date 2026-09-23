@@ -2,6 +2,7 @@ import { store } from './store';
 import { asyncOutbox, createLocalBackend, createSupabaseBackend } from './backends';
 import { getSupabase, isSupabaseConfigured } from './supabase';
 import { prefs } from './prefs';
+import { pullPrefs, watchPrefs } from './prefsSync';
 import { restartApp } from './session';
 import { shouldShowComeback } from '@/core/triage';
 
@@ -18,7 +19,11 @@ export type BootState =
  *   no backend configured at all   → this device only (demo mode)
  * A real session always wins over the guest flag.
  */
+let stopPrefsWatch: (() => void) | null = null;
+
 export async function boot(): Promise<BootState> {
+  stopPrefsWatch?.();
+  stopPrefsWatch = null;
   try {
     await prefs.load();
     const previous = prefs.get().lastOpenedAt;
@@ -32,7 +37,11 @@ export async function boot(): Promise<BootState> {
         if (prefs.get().guest) prefs.set({ guest: false });
         const name = (user.user_metadata as { full_name?: string } | undefined)?.full_name;
         if (name && !prefs.get().studentName) prefs.set({ studentName: name });
-        await store.init(createSupabaseBackend(sb, user.id), asyncOutbox(`studyapp.outbox.${user.id}`));
+        await Promise.all([
+          store.init(createSupabaseBackend(sb, user.id), asyncOutbox(`studyapp.outbox.${user.id}`)),
+          pullPrefs(sb), // study settings made on another device
+        ]);
+        stopPrefsWatch = watchPrefs(sb);
       } else if (prefs.get().guest) {
         await store.init(createLocalBackend());
       } else {
@@ -59,8 +68,14 @@ export async function signOut() {
     }
   }
   store.reset();
-  prefs.set({ guest: false });
+  // The next account's own settings should win over whatever this one left behind.
+  prefs.set({ guest: false, prefsUpdatedAt: null });
   restartApp();
+}
+
+/** Keep this device in step with the account (no-op outside an account). */
+export function pullAccountPrefs(): Promise<void> {
+  return isSupabaseConfigured && store.mode === 'supabase' ? pullPrefs(getSupabase()) : Promise.resolve();
 }
 
 /** Leave guest mode so the sign-in / create-account screen shows. */

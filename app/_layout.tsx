@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, AppState, View } from 'react-native';
+import { ActivityIndicator, View } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { boot, type BootState } from '@/data/boot';
+import { boot, pullAccountPrefs, type BootState } from '@/data/boot';
 import { getSupabase, isSupabaseConfigured } from '@/data/supabase';
 import { store } from '@/data/store';
+import { startAutoSync } from '@/data/sync';
 import { enterGuestMode } from '@/data/boot';
 import { onRestart } from '@/data/session';
 import { useSemester } from '@/data/derived';
@@ -19,7 +20,7 @@ import { useColors } from '@/ui/theme';
 
 let comebackHandled = false;
 
-/** Keeps OS notifications in step with the (budgeted) plan, and flushes offline writes on foreground. */
+/** Keeps OS notifications in step with the (budgeted) plan, and this device in step with the account. */
 function Background() {
   const sem = useSemester();
   const { notificationsEnabled } = usePrefs();
@@ -28,12 +29,7 @@ function Background() {
     void syncNotifications(sem.notifications, notificationsEnabled);
   }, [sem.notifications, notificationsEnabled]);
 
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', (s) => {
-      if (s === 'active') void store.flush();
-    });
-    return () => sub.remove();
-  }, []);
+  useEffect(() => startAutoSync(pullAccountPrefs), []);
   return null;
 }
 

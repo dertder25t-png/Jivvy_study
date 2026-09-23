@@ -1,4 +1,5 @@
-// Device-level preferences (not user data — these never leave the phone).
+// Preferences. Most are about this device (screen, permissions, time zone); the study settings
+// listed in SYNCED_PREFS also follow a signed-in account to every device (see prefsSync.ts).
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSyncExternalStore } from 'react';
 import { deviceTimezone } from '@/core/time';
@@ -24,7 +25,16 @@ export interface Prefs {
   learnPocketSize: number | null;
   /** Which side of the card Learn mode asks you to type: the definition, the term, or a mix. */
   learnDirection: 'term_to_def' | 'def_to_term' | 'mixed';
+  /** When the daily study reminder goes off ('HH:MM', 24h, in the user's zone). */
+  studyTime: string;
+  /** When the synced study settings last changed, on this device or another. null = never synced. */
+  prefsUpdatedAt: string | null;
 }
+
+/** The settings that follow the account rather than staying on one device. */
+export const SYNCED_PREFS = [
+  'studentName', 'dailyMinutes', 'studyTime', 'learnDirection', 'learnPocketSize', 'subNoteQuickAddEnabled', 'subNoteShortcutKey',
+] as const satisfies ReadonlyArray<keyof Prefs>;
 
 const KEY = 'studyapp.prefs.v1';
 
@@ -41,6 +51,8 @@ const DEFAULTS = (): Prefs => ({
   subNoteShortcutKey: 'Tab',
   learnPocketSize: null,
   learnDirection: 'term_to_def',
+  studyTime: '18:00',
+  prefsUpdatedAt: null,
 });
 
 let current: Prefs = DEFAULTS();

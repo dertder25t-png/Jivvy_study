@@ -8,7 +8,7 @@ export type RowsLike = Partial<Record<TableName, Array<Record<string, unknown>>>
 export const IMPORT_ORDER: TableName[] = [
   'terms', 'courses', 'syllabi', 'grade_components', 'assignments', 'topics', 'exams', 'exam_coverage',
   'quizzes', 'quiz_coverage', 'course_policies', 'absences', 'notes', 'cards', 'card_reviews',
-  'questions', 'generation_events', 'waiting_on', 'metric_events',
+  'questions', 'generation_events', 'waiting_on', 'metric_events', 'learn_progress',
 ];
 
 /** table → [column, parent table] for the relationships that would otherwise fail on insert. */
@@ -33,7 +33,7 @@ const FKS: Partial<Record<TableName, Array<[string, TableName, boolean]>>> = {
   waiting_on: [['course_id', 'courses', true]],
 };
 
-const PK: Partial<Record<TableName, string>> = { exam_coverage: 'exam_id', course_policies: 'course_id' };
+const PK: Partial<Record<TableName, string>> = { exam_coverage: 'exam_id', course_policies: 'course_id', learn_progress: 'scope_key' };
 
 export interface ExportFile {
   app: 'study-app';
