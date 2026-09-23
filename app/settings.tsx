@@ -59,7 +59,7 @@ export default function Settings() {
   };
 
   return (
-    <Screen>
+    <Screen maxWidth={760}>
       <Section title="You">
         <Card>
           <Field label="Your name (for email drafts)" value={p.studentName} onChangeText={(v) => prefs.set({ studentName: v })} placeholder="Alex" />

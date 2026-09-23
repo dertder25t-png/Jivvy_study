@@ -83,7 +83,7 @@ export default function AddSyllabus() {
   };
 
   return (
-    <Screen>
+    <Screen maxWidth={760}>
       <T variant="title">Upload once. Your semester exists.</T>
       <T muted>We read the syllabus and pull out every deadline, exam, grade weight, late policy and weekly topic. You confirm it before anything is saved.</T>
 

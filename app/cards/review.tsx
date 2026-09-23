@@ -62,7 +62,7 @@ export default function ReviewSession() {
 
   if (queue.length === 0) {
     return (
-      <Screen>
+      <Screen maxWidth={760}>
         <Empty
           title="No cards match"
           body="There's nothing in that selection yet. Try a wider one, or make cards from a note."
@@ -76,7 +76,7 @@ export default function ReviewSession() {
     const done = Object.values(tally).reduce((a, b) => a + b, 0);
     const mins = Math.max(1, Math.round((Date.now() - startedAt.current) / 60_000));
     return (
-      <Screen>
+      <Screen maxWidth={760}>
         <Card tone="good">
           <T variant="title">Nice — session done</T>
           <T muted>
@@ -113,7 +113,7 @@ export default function ReviewSession() {
   const back = card.card_type === 'cloze' ? clozeBlanked(card.cloze_text ?? card.definition, true) : card.definition;
 
   return (
-    <Screen
+    <Screen maxWidth={760}
       footer={
         revealed ? (
           <Row>

@@ -4,11 +4,13 @@ import { useRouter } from 'expo-router';
 import { courseScale, formatPercent, gradeBand, officialPercent } from '@/core/grades';
 import { useSemester } from '@/data/derived';
 import { Button, Card, Dot, Empty, Row, Screen, T } from '@/ui/components';
+import { Grid, useLayout } from '@/ui/layout';
 import { dueLabel } from '@/ui/rows';
 
 export default function Courses() {
   const sem = useSemester();
   const router = useRouter();
+  const { isPhone } = useLayout();
 
   return (
     <Screen>
@@ -20,6 +22,7 @@ export default function Courses() {
         />
       ) : null}
 
+      <Grid minItemWidth={340}>
       {sem.rows.courses.map((course) => {
         const grade = sem.grades.get(course.id);
         const next = sem.obligations
@@ -55,9 +58,10 @@ export default function Courses() {
           </Card>
         );
       })}
+      </Grid>
 
       {sem.rows.courses.length > 0 ? (
-        <Button title="Add another syllabus" variant="secondary" onPress={() => router.push('/syllabus/add')} />
+        <Button title="Add another syllabus" variant="secondary" onPress={() => router.push('/syllabus/add')} style={{ alignSelf: isPhone ? 'stretch' : 'flex-start' }} />
       ) : null}
     </Screen>
   );

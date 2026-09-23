@@ -74,7 +74,7 @@ export default function LearnMode() {
 
   if (pool.length === 0) {
     return (
-      <Screen>
+      <Screen maxWidth={760}>
         <Empty
           title="No cards to study"
           body="Make some from a note (open a note and tap the cards button), or add your own."
@@ -152,7 +152,7 @@ export default function LearnMode() {
   }
 
   return (
-    <Screen>
+    <Screen maxWidth={760}>
       <Empty title="Something went wrong" body="Go back and try again." action={<Button title="Back" onPress={() => router.back()} />} />
     </Screen>
   );

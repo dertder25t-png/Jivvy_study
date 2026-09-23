@@ -3,59 +3,11 @@
 // if you typed anything the strict format didn't match.
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Button, Row, T } from './components';
+import { DAY_CELL_WIDTH, MonthHeader, firstOfMonth, monthCells } from './calendarGrid';
 import { radius, space, useColors } from './theme';
 import { localDateString, zonedParts, zonedToUtc } from '@/core/time';
-
-const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];
-
-function ym(ymd: string): { y: number; m: number } {
-  const [y, m] = ymd.split('-').map(Number);
-  return { y, m };
-}
-
-/** First-of-month ymd, shifted by `delta` months. */
-function shiftMonth(ymd: string, delta: number): string {
-  const { y, m } = ym(ymd);
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-01`;
-}
-
-function firstOfMonth(ymd: string): string {
-  const { y, m } = ym(ymd);
-  return `${y}-${String(m).padStart(2, '0')}-01`;
-}
-
-interface Cell {
-  ymd: string;
-  day: number;
-  inMonth: boolean;
-}
-
-function buildCells(viewYmd: string): Cell[] {
-  const { y, m } = ym(viewYmd);
-  const firstWeekday = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
-  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  const cells: Cell[] = [];
-  const start = new Date(Date.UTC(y, m - 1, 1 - firstWeekday));
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(start.getTime() + i * 86400000);
-    const dy = d.getUTCFullYear();
-    const dm = d.getUTCMonth() + 1;
-    const dd = d.getUTCDate();
-    cells.push({
-      ymd: `${dy}-${String(dm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`,
-      day: dd,
-      inMonth: dm === m && dy === y,
-    });
-    if (i >= 34 && d.getUTCDate() === daysInMonth && dm === m) break; // stop after the month's last week
-  }
-  return cells;
-}
 
 function formatClock(h: number, min: number): string {
   const suffix = h >= 12 ? 'PM' : 'AM';
@@ -68,9 +20,13 @@ function StepButton({ label, onPress }: { label: string; onPress: () => void }) 
   return (
     <Pressable
       onPress={onPress}
-      style={{ paddingHorizontal: 8, paddingVertical: 6, borderRadius: radius.sm, backgroundColor: c.surfaceAlt, borderWidth: 1, borderColor: c.border }}
+      accessibilityRole="button"
+      style={({ pressed }) => ({
+        paddingHorizontal: 8, paddingVertical: 6, borderRadius: radius.sm,
+        backgroundColor: pressed ? c.border : c.surface, borderWidth: 1, borderColor: c.border,
+      })}
     >
-      <T variant="small" style={{ fontWeight: '600' }}>{label}</T>
+      <T variant="small" style={{ fontWeight: '600', fontSize: 12 }}>{label}</T>
     </Pressable>
   );
 }
@@ -85,37 +41,32 @@ export function CalendarField({
   label?: string;
 }) {
   const c = useColors();
-  const [open, setOpen] = useState(false);
-  const [draftYmd, setDraftYmd] = useState<string>(() => (valueIso ? localDateString(new Date(valueIso), tz) : localDateString(now, tz)));
-  const [draftHour, setDraftHour] = useState<number>(() => (valueIso ? zonedParts(new Date(valueIso), tz).h : 23));
-  const [draftMinute, setDraftMinute] = useState<number>(() => (valueIso ? zonedParts(new Date(valueIso), tz).min : 59));
-  const [viewYmd, setViewYmd] = useState<string>(() => firstOfMonth(draftYmd));
-
   const todayYmd = localDateString(now, tz);
+  const [open, setOpen] = useState(false);
+  const [draftYmd, setDraftYmd] = useState(todayYmd);
+  const [draftHour, setDraftHour] = useState(23);
+  const [draftMinute, setDraftMinute] = useState(59);
+  const [viewYmd, setViewYmd] = useState(firstOfMonth(todayYmd));
 
   const openPicker = () => {
     const base = valueIso ? localDateString(new Date(valueIso), tz) : todayYmd;
+    const parts = valueIso ? zonedParts(new Date(valueIso), tz) : null;
     setDraftYmd(base);
-    setDraftHour(valueIso ? zonedParts(new Date(valueIso), tz).h : 23);
-    setDraftMinute(valueIso ? zonedParts(new Date(valueIso), tz).min : 59);
+    setDraftHour(parts ? parts.h : 23);
+    setDraftMinute(parts ? parts.min : 59);
     setViewYmd(firstOfMonth(base));
     setOpen(true);
   };
 
   const adjustMinute = (delta: number) => {
-    setDraftMinute((min) => {
-      let next = min + delta;
-      let hourDelta = 0;
-      while (next < 0) { next += 60; hourDelta -= 1; }
-      while (next >= 60) { next -= 60; hourDelta += 1; }
-      if (hourDelta !== 0) setDraftHour((h) => (h + hourDelta + 24) % 24);
-      return next;
-    });
+    const total = (((draftHour * 60 + draftMinute + delta) % 1440) + 1440) % 1440;
+    setDraftHour(Math.floor(total / 60));
+    setDraftMinute(total % 60);
   };
 
   const save = () => {
-    const hh = `${String(draftHour).padStart(2, '0')}:${String(draftMinute).padStart(2, '0')}`;
-    onChange(zonedToUtc(draftYmd, hh, tz).toISOString());
+    const hhmm = `${String(draftHour).padStart(2, '0')}:${String(draftMinute).padStart(2, '0')}`;
+    onChange(zonedToUtc(draftYmd, hhmm, tz).toISOString());
     setOpen(false);
   };
 
@@ -124,68 +75,79 @@ export function CalendarField({
     setOpen(false);
   };
 
-  const buttonLabel = valueIso
-    ? `${new Date(valueIso).toLocaleDateString(undefined, { timeZone: tz, month: 'short', day: 'numeric', year: 'numeric' })} · ${formatClock(zonedParts(new Date(valueIso), tz).h, zonedParts(new Date(valueIso), tz).min)}`
-    : label;
-
   if (!open) {
+    const parts = valueIso ? zonedParts(new Date(valueIso), tz) : null;
+    const text = valueIso && parts
+      ? `${new Date(valueIso).toLocaleDateString(undefined, { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · ${formatClock(parts.h, parts.min)}`
+      : label;
     return (
-      <Row gap={8}>
-        <Button title={buttonLabel} small variant="secondary" onPress={openPicker} />
+      <Row gap={8} style={{ flexWrap: 'wrap' }}>
+        <Pressable
+          onPress={openPicker}
+          accessibilityRole="button"
+          style={({ pressed }) => ({
+            flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10, paddingHorizontal: 14,
+            borderRadius: radius.md, borderWidth: 1, borderColor: c.border,
+            backgroundColor: pressed ? c.surfaceAlt : c.surface,
+          })}
+        >
+          <Ionicons name="calendar-outline" size={16} color={valueIso ? c.primary : c.muted} />
+          <T variant="small" style={{ fontWeight: '600', color: valueIso ? c.text : c.muted }}>{text}</T>
+          <Ionicons name="chevron-down" size={14} color={c.muted} />
+        </Pressable>
         {valueIso ? <Button title="Clear" small variant="ghost" onPress={() => onChange(null)} /> : null}
       </Row>
     );
   }
 
-  const cells = buildCells(viewYmd);
-
   return (
-    <View style={{ gap: space.sm, backgroundColor: c.surfaceAlt, borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: c.border }}>
-      <Row style={{ justifyContent: 'space-between' }}>
-        <Pressable onPress={() => setViewYmd(shiftMonth(viewYmd, -1))} hitSlop={8}><T variant="heading">‹</T></Pressable>
-        <T variant="body" style={{ fontWeight: '600' }}>{MONTH_NAMES[ym(viewYmd).m - 1]} {ym(viewYmd).y}</T>
-        <Pressable onPress={() => setViewYmd(shiftMonth(viewYmd, 1))} hitSlop={8}><T variant="heading">›</T></Pressable>
-      </Row>
-
-      <Row style={{ justifyContent: 'space-between' }}>
-        {WEEKDAY_LETTERS.map((d, i) => (
-          <T key={i} variant="small" muted style={{ width: 32, textAlign: 'center' }}>{d}</T>
-        ))}
-      </Row>
+    <View
+      style={{
+        width: '100%', maxWidth: 360, gap: space.sm, backgroundColor: c.surfaceAlt,
+        borderRadius: radius.lg, padding: space.md, borderWidth: 1, borderColor: c.border,
+      }}
+    >
+      <MonthHeader viewYmd={viewYmd} onChange={setViewYmd} />
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-        {cells.map((cell) => {
+        {monthCells(viewYmd).map((cell) => {
           const selected = cell.ymd === draftYmd;
           const isToday = cell.ymd === todayYmd;
           return (
-            <Pressable
-              key={cell.ymd}
-              onPress={() => setDraftYmd(cell.ymd)}
-              style={{
-                width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center',
-                backgroundColor: selected ? c.primary : 'transparent',
-                borderWidth: isToday && !selected ? 1 : 0, borderColor: c.primary,
-                opacity: cell.inMonth ? 1 : 0.35,
-              }}
-            >
-              <T variant="small" style={{ color: selected ? c.onPrimary : c.text, fontWeight: isToday ? '700' : '400' }}>
-                {cell.day}
-              </T>
-            </Pressable>
+            <View key={cell.ymd} style={{ width: DAY_CELL_WIDTH, alignItems: 'center', paddingVertical: 2 }}>
+              <Pressable
+                onPress={() => setDraftYmd(cell.ymd)}
+                accessibilityRole="button"
+                accessibilityLabel={cell.ymd}
+                accessibilityState={{ selected }}
+                style={({ pressed }) => ({
+                  width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+                  backgroundColor: selected ? c.primary : pressed ? c.border : 'transparent',
+                  borderWidth: isToday && !selected ? 1 : 0, borderColor: c.primary,
+                  opacity: cell.inMonth ? 1 : 0.35,
+                })}
+              >
+                <T variant="small" style={{ color: selected ? c.onPrimary : c.text, fontWeight: isToday || selected ? '700' : '400' }}>
+                  {cell.day}
+                </T>
+              </Pressable>
+            </View>
           );
         })}
       </View>
 
-      <Row style={{ justifyContent: 'space-between', marginTop: 4 }}>
-        <T variant="small" muted>Time</T>
-        <Row gap={4}>
-          <StepButton label="−1h" onPress={() => setDraftHour((h) => (h + 23) % 24)} />
-          <StepButton label="−15m" onPress={() => adjustMinute(-15)} />
-          <T variant="small" style={{ fontWeight: '600', minWidth: 76, textAlign: 'center' }}>{formatClock(draftHour, draftMinute)}</T>
-          <StepButton label="+15m" onPress={() => adjustMinute(15)} />
-          <StepButton label="+1h" onPress={() => setDraftHour((h) => (h + 1) % 24)} />
+      <View style={{ gap: 6, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: c.border }}>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <T variant="small" muted>Time</T>
+          <T variant="body" style={{ fontWeight: '700' }}>{formatClock(draftHour, draftMinute)}</T>
         </Row>
-      </Row>
+        <Row gap={6} style={{ justifyContent: 'space-between' }}>
+          <StepButton label="−1h" onPress={() => adjustMinute(-60)} />
+          <StepButton label="−15m" onPress={() => adjustMinute(-15)} />
+          <StepButton label="+15m" onPress={() => adjustMinute(15)} />
+          <StepButton label="+1h" onPress={() => adjustMinute(60)} />
+        </Row>
+      </View>
 
       <Row style={{ justifyContent: 'space-between', marginTop: 4 }}>
         {valueIso ? <Button title="Clear" small variant="ghost" onPress={clear} /> : <View />}

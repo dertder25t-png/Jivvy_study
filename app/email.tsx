@@ -36,7 +36,7 @@ export default function EmailProfessor() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, courseId, assignmentId]);
 
-  if (sem.rows.courses.length === 0) return <Screen><Empty title="Add a course first" /></Screen>;
+  if (sem.rows.courses.length === 0) return <Screen maxWidth={760}><Empty title="Add a course first" /></Screen>;
 
   const to = course?.instructor_email ?? '';
   const open = async () => {
@@ -59,7 +59,7 @@ export default function EmailProfessor() {
   };
 
   return (
-    <Screen>
+    <Screen maxWidth={760}>
       <Section title="Course">
         <Row style={{ flexWrap: 'wrap' }}>
           {sem.rows.courses.map((k) => (

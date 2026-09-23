@@ -61,7 +61,7 @@ export default function StudySetup() {
 
   if (sem.cards.filter((k) => k.card.status === 'accepted' || k.card.status === 'edited').length === 0) {
     return (
-      <Screen>
+      <Screen maxWidth={760}>
         <Empty
           title="No cards to study yet"
           body="Make some from a note (open a note and tap the cards button), or add your own."
@@ -85,7 +85,7 @@ export default function StudySetup() {
   };
 
   return (
-    <Screen
+    <Screen maxWidth={760}
       footer={
         <View style={{ gap: 6 }}>
           <Button

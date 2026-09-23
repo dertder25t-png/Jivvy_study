@@ -4,38 +4,49 @@ import {
   type StyleProp, type TextInputProps, type TextProps, type TextStyle, type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { CONTENT_MAX_WIDTH, useLayout } from './layout';
 import { radius, space, useColors } from './theme';
 
 // ------------------------------------------------------------------ Screen
+/** Page container. Phones get edge-to-edge gutters; wider screens get a centered, max-width column. */
 export function Screen({
-  children, scroll = true, padded = true, footer, contentStyle,
+  children, scroll = true, padded = true, footer, contentStyle, maxWidth = CONTENT_MAX_WIDTH,
 }: {
   children: React.ReactNode;
   scroll?: boolean;
   padded?: boolean;
   footer?: React.ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+  maxWidth?: number;
 }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
-  const pad = padded ? space.lg : 0;
+  const { isDesktop, isTablet } = useLayout();
+  const gutter = !padded ? 0 : isDesktop ? space.xxl : isTablet ? space.xl : space.lg;
+  const column: ViewStyle = { width: '100%', maxWidth, alignSelf: 'center' };
+  const inner: StyleProp<ViewStyle> = [
+    column,
+    { paddingHorizontal: gutter, paddingTop: padded ? (isDesktop ? space.xl : space.lg) : 0, gap: space.lg },
+  ];
   const body = scroll ? (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={[{ padding: pad, paddingBottom: pad + 24, gap: space.lg }, contentStyle]}
+      contentContainerStyle={[inner, { paddingBottom: gutter + (isDesktop ? 48 : 96) }, contentStyle]}
       keyboardShouldPersistTaps="handled"
     >
       {children}
     </ScrollView>
   ) : (
-    <View style={[{ flex: 1, padding: pad, gap: space.lg }, contentStyle]}>{children}</View>
+    <View style={[{ flex: 1 }, inner, { paddingBottom: gutter }, contentStyle]}>{children}</View>
   );
   return (
-    <View style={{ flex: 1, backgroundColor: c.bg, paddingTop: 0 }}>
+    <View style={{ flex: 1, backgroundColor: c.bg }}>
       {body}
       {footer ? (
-        <View style={{ padding: space.lg, paddingBottom: space.lg + insets.bottom,borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, backgroundColor: c.bg }}>
-          {footer}
+        <View style={{ borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, backgroundColor: c.bg }}>
+          <View style={[column, { paddingHorizontal: gutter || space.lg, paddingTop: space.md, paddingBottom: space.md + insets.bottom }]}>
+            {footer}
+          </View>
         </View>
       ) : null}
     </View>
@@ -157,6 +168,41 @@ export function Chip({
     </View>
   );
   return onPress ? <Pressable onPress={onPress} accessibilityRole="button">{body}</Pressable> : body;
+}
+
+/** iOS/desktop-style segmented control for switching between a few views of one page. */
+export function Segmented<K extends string>({
+  options, value, onChange, stretch,
+}: {
+  options: Array<{ key: K; label: string }>;
+  value: K;
+  onChange: (k: K) => void;
+  /** Fill the available width (phones) instead of hugging the labels. */
+  stretch?: boolean;
+}) {
+  const c = useColors();
+  return (
+    <View style={{ flexDirection: 'row', alignSelf: stretch ? 'stretch' : 'flex-start', padding: 3, gap: 3, borderRadius: radius.md, backgroundColor: c.surfaceAlt }}>
+      {options.map((o) => {
+        const on = o.key === value;
+        return (
+          <Pressable
+            key={o.key}
+            onPress={() => onChange(o.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: on }}
+            style={{
+              flex: stretch ? 1 : undefined, alignItems: 'center', paddingVertical: 7, paddingHorizontal: 16,
+              borderRadius: radius.sm, backgroundColor: on ? c.surface : 'transparent',
+              shadowColor: '#000', shadowOpacity: on ? 0.08 : 0, shadowRadius: 3, shadowOffset: { width: 0, height: 1 },
+            }}
+          >
+            <RNText style={{ fontSize: 14, fontWeight: on ? '600' : '500', color: on ? c.text : c.muted }}>{o.label}</RNText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 }
 
 export function Dot({ color, size = 10 }: { color: string; size?: number }) {

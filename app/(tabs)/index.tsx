@@ -10,12 +10,16 @@ import { Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { ObligationRow, dueLabel, impactLabel } from '@/ui/rows';
 import { store } from '@/data/store';
 import { ImportOffer } from '@/ui/ImportOffer';
+import { Columns, useLayout } from '@/ui/layout';
+import { useColors } from '@/ui/theme';
 
 const ORDER: Bucket[] = ['today', 'tomorrow', 'this_week', 'next_week', 'later'];
 
 export default function ComingUp() {
   const sem = useSemester();
   const router = useRouter();
+  const c = useColors();
+  const { isDesktop, isPhone } = useLayout();
   const { now, tz } = sem;
 
   const { buckets, undated, pastDue, hiddenLater } = useMemo(() => {
@@ -47,50 +51,49 @@ export default function ComingUp() {
 
   if (sem.rows.courses.length === 0) {
     return (
-      <Screen>
+      <Screen maxWidth={640}>
         <ImportOffer />
-        <View style={{ height: 24 }} />
+        <View style={{ height: isDesktop ? 48 : 24 }} />
         <T variant="big">Your semester{'\n'}builds itself.</T>
         <T muted>Drop in a syllabus and every deadline, exam, grade weight and late policy shows up here — no typing.</T>
-        <Button title="Add a syllabus" onPress={() => router.push('/syllabus/add')} />
+        <Button title="Add a syllabus" onPress={() => router.push('/syllabus/add')} style={{ alignSelf: isPhone ? 'stretch' : 'flex-start' }} />
         {store.mode === 'local' ? (
           <Card tone="alt">
             <T variant="heading">Just looking around?</T>
             <T variant="small" muted>Load a sample semester (two courses) to see how everything fits together.</T>
-            <Button title="Load a sample semester" variant="secondary" onPress={() => addSampleSemester(new Date())} />
+            <Button title="Load a sample semester" variant="secondary" onPress={() => addSampleSemester(new Date())} style={{ alignSelf: isPhone ? 'stretch' : 'flex-start' }} />
           </Card>
         ) : null}
       </Screen>
     );
   }
 
-  return (
-    <Screen>
-      <ImportOffer />
-      {one ? (
-        <Card tone="primary" onPress={() => (one.kind === 'assignment' ? router.push(`/assignment/${one.refId}`) : undefined)}>
-          <T variant="label" color="#4F46E5">The one thing that matters</T>
-          <T variant="title">{one.title}</T>
-          <T muted>
-            {sem.courseName(one.courseId)} · {dueLabel(one, now, tz)}
-            {impactLabel(one.impact) ? ` · ${impactLabel(one.impact)}` : ''}
-          </T>
-        </Card>
-      ) : null}
+  const focus = one ? (
+    <Card tone="primary" onPress={() => (one.kind === 'assignment' ? router.push(`/assignment/${one.refId}`) : undefined)}>
+      <T variant="label" color={c.primary}>The one thing that matters</T>
+      <T variant="title">{one.title}</T>
+      <T muted>
+        {sem.courseName(one.courseId)} · {dueLabel(one, now, tz)}
+        {impactLabel(one.impact) ? ` · ${impactLabel(one.impact)}` : ''}
+      </T>
+    </Card>
+  ) : null;
 
+  const alerts = (
+    <>
       {crunch ? (
         <Card tone="warn" onPress={() => router.push('/crunch')}>
-          <T variant="label" color="#B45309">Heads up — {crunchWhen(crunch)}</T>
+          <T variant="label" color={c.warn}>Heads up — {crunchWhen(crunch)}</T>
           <T variant="heading">{crunchHeadline(crunch)}</T>
-          <T variant="small" muted>Tap to see the week and plan around it.</T>
+          <T variant="small" muted>See the week and plan around it.</T>
         </Card>
       ) : null}
 
       {sem.inboxCount > 0 ? (
         <Card onPress={() => router.push('/notes')}>
           <Row style={{ justifyContent: 'space-between' }}>
-            <T variant="body">{sem.inboxCount} note{sem.inboxCount === 1 ? '' : 's'} could use a quick confirm</T>
-            <T variant="small" color="#4F46E5">Review</T>
+            <T variant="body" style={{ flex: 1 }}>{sem.inboxCount} note{sem.inboxCount === 1 ? '' : 's'} could use a quick confirm</T>
+            <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Review</T>
           </Row>
         </Card>
       ) : null}
@@ -107,7 +110,11 @@ export default function ComingUp() {
           <T variant="small" muted>See what's still salvageable — some of it usually is.</T>
         </Card>
       ) : null}
+    </>
+  );
 
+  const timeline = (
+    <>
       {ORDER.map((b) => {
         const list = buckets.get(b);
         if (!list?.length) return null;
@@ -132,6 +139,21 @@ export default function ComingUp() {
       {sem.obligations.filter((o) => !o.done && o.kind !== 'waiting_on').length === 0 ? (
         <Empty title="Nothing coming up" body="Enjoy it. New work shows up here as soon as it's on a syllabus or you capture it." />
       ) : null}
+    </>
+  );
+
+  return (
+    <Screen>
+      <ImportOffer />
+      {isDesktop && (crunch || sem.inboxCount > 0 || dueWaiting.length > 0 || pastDue > 0) ? (
+        <Columns main={<>{focus}{timeline}</>} side={alerts} sideWidth={340} />
+      ) : (
+        <>
+          {focus}
+          {alerts}
+          {timeline}
+        </>
+      )}
     </Screen>
   );
 }

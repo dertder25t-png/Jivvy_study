@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ScrollView, TextInput, View } from 'react-native';
+import { TextInput, View } from 'react-native';
 import { Button, Card, Empty, Row, Screen, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
 import { reviewCard } from '@/data/actions';
@@ -63,7 +63,7 @@ export default function LearningCard({ session, cards, direction, onPocketComple
   }, [phase, currentCard]);
 
   if (!currentCard) {
-    return <Screen><Empty title="No card to show" /></Screen>;
+    return <Screen maxWidth={760}><Empty title="No card to show" /></Screen>;
   }
 
   const handleManualHide = () => {
@@ -94,7 +94,7 @@ export default function LearningCard({ session, cards, direction, onPocketComple
   };
 
   return (
-    <Screen
+    <Screen maxWidth={760}
       footer={
         phase === 'visible' && (
           <Button
@@ -105,7 +105,7 @@ export default function LearningCard({ session, cards, direction, onPocketComple
         )
       }
     >
-      <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
+      <View style={{ gap: 12 }}>
         <Row style={{ justifyContent: 'space-between' }}>
           <T variant="small" style={{ fontWeight: '600' }}>Card {progress}</T>
           <T variant="small" muted>Pocket: {pocketProgress}</T>
@@ -246,7 +246,7 @@ export default function LearningCard({ session, cards, direction, onPocketComple
             </View>
           </Card>
         )}
-      </ScrollView>
+      </View>
     </Screen>
   );
 }

@@ -49,7 +49,7 @@ export default function GenerateCards() {
     }),
   ).current;
 
-  if (!note) return <Screen><Empty title="Note not found" /></Screen>;
+  if (!note) return <Screen maxWidth={760}><Empty title="Note not found" /></Screen>;
   const course = note.course_id ? sem.courseById.get(note.course_id) : undefined;
 
   const generate = async () => {
@@ -95,7 +95,7 @@ export default function GenerateCards() {
   const showGenerate = phase === 'idle' && pending.length === 0 && candidates.length > 0;
 
   return (
-    <Screen footer={showGenerate ? <Button title={`Make ${candidates.length} card${candidates.length === 1 ? '' : 's'}`} onPress={generate} /> : undefined}>
+    <Screen maxWidth={760} footer={showGenerate ? <Button title={`Make ${candidates.length} card${candidates.length === 1 ? '' : 's'}`} onPress={generate} /> : undefined}>
       <Stack.Screen options={{ title: course ? `Cards · ${course.code ?? course.name}` : 'Make flashcards' }} />
 
       {phase === 'idle' && pending.length === 0 ? (

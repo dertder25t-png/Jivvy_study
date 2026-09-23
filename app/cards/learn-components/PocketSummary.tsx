@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Button, Card, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
 import { prefs } from '@/data/prefs';
@@ -36,8 +36,8 @@ export default function PocketSummary({
   };
 
   return (
-    <Screen>
-      <ScrollView contentContainerStyle={{ gap: 12, paddingBottom: 24 }}>
+    <Screen maxWidth={760}>
+      <View style={{ gap: 12 }}>
         <Section title="Pocket Complete! 🎉">
           <T>Great work! Here's how you did.</T>
         </Section>
@@ -165,7 +165,7 @@ export default function PocketSummary({
             reviewing the struggling cards later today.
           </T>
         </Card>
-      </ScrollView>
+      </View>
     </Screen>
   );
 }

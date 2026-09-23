@@ -9,6 +9,7 @@ import { createSubNote, fileNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { usePrefs } from '@/data/prefs';
 import { Button, Card, Chip, Dot, Empty, Row, Screen, Section, T } from '@/ui/components';
+import { useLayout } from '@/ui/layout';
 import { radius, space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 
@@ -22,6 +23,7 @@ export default function Notes() {
   const router = useRouter();
   const c = useColors();
   const { subNoteQuickAddEnabled } = usePrefs();
+  const { isPhone } = useLayout();
   const notes = [...sem.rows.notes].sort((a, b) => b.created_at.localeCompare(a.created_at));
   const inbox = notes.filter(needsConfirmation);
   const filed = notes.filter((n) => !needsConfirmation(n));
@@ -112,10 +114,10 @@ export default function Notes() {
   };
 
   return (
-    <Screen>
+    <Screen maxWidth={900}>
       <Row gap={8}>
-        <Button title="New note" onPress={() => router.push('/note/new')} style={{ flex: 1 }} />
-        <Button title="Import" variant="ghost" onPress={() => router.push('/import')} style={{ flex: 1 }} />
+        <Button title="New note" onPress={() => router.push('/note/new')} style={isPhone ? { flex: 1 } : undefined} />
+        <Button title="Import" variant="secondary" onPress={() => router.push('/import')} style={isPhone ? { flex: 1 } : undefined} />
       </Row>
 
       {inbox.length > 0 ? (
