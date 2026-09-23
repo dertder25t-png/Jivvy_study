@@ -29,7 +29,7 @@ export function SyncProblemBanner() {
   return (
     <Card tone="warn">
       <T variant="heading">{changes(s.pending)} haven't reached your account yet</T>
-      <T variant="small">They're safe on this device and will sync as soon as the server accepts them. Other devices won't see them until then.</T>
+      <T variant="small">They're kept on this device and retried, and other devices won't see them until they go through. A change the server still refuses after a day is dropped so the rest can sync.</T>
       <Row>
         <Button title="Try again" small onPress={retry} loading={busy} />
         <Button title="Details" small variant="ghost" onPress={() => router.push('/settings')} />

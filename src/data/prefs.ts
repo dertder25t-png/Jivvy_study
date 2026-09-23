@@ -29,6 +29,8 @@ export interface Prefs {
   studyTime: string;
   /** When the synced study settings last changed, on this device or another. null = never synced. */
   prefsUpdatedAt: string | null;
+  /** A random tag for this install, so the server can tell this device's changes from another's. Never synced. */
+  deviceId: string;
 }
 
 /** The settings that follow the account rather than staying on one device. */
@@ -53,6 +55,7 @@ const DEFAULTS = (): Prefs => ({
   learnDirection: 'term_to_def',
   studyTime: '18:00',
   prefsUpdatedAt: null,
+  deviceId: '',
 });
 
 let current: Prefs = DEFAULTS();
@@ -83,6 +86,12 @@ export const prefs = {
     };
   },
 };
+
+/** This install's tag (made on first use). */
+export function deviceId(): string {
+  if (!current.deviceId) prefs.set({ deviceId: `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}` });
+  return current.deviceId;
+}
 
 export function usePrefs(): Prefs {
   return useSyncExternalStore(prefs.subscribe, prefs.get, prefs.get);

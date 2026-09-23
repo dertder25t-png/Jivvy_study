@@ -99,14 +99,18 @@ export async function deleteAccount(): Promise<void> {
 }
 
 // ------------------------------------------------------------------ export
-export function exportJson(now = new Date()): string {
-  return JSON.stringify(buildExport(store.snapshot() as unknown as RowsLike, now), null, 2);
+export function exportJson(rows: RowsLike = store.snapshot() as unknown as RowsLike, now = new Date()): string {
+  return JSON.stringify(buildExport(rows, now), null, 2);
 }
 
 /** Web: saves a .json file. Phones: opens the share sheet with the JSON. */
 export async function downloadMyData(): Promise<void> {
   const now = new Date();
-  const json = exportJson(now);
+  // The app doesn't keep its full history of generated cards and usage events in memory; fetch it.
+  const rows = { ...(store.snapshot() as unknown as RowsLike) };
+  rows.metric_events = (await store.fetchAll('metric_events')) as unknown as RowsLike['metric_events'];
+  rows.generation_events = (await store.fetchAll('generation_events')) as unknown as RowsLike['generation_events'];
+  const json = exportJson(rows, now);
   if (Platform.OS === 'web') {
     const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
     const a = document.createElement('a');
