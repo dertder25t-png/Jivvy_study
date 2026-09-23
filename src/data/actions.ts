@@ -392,8 +392,17 @@ export function updateCard(card: Card, patch: { term: string; definition: string
 }
 
 export function deleteCard(card: Card) {
-  store.remove('cards', card);
-  store.purgeLocal('card_reviews', (r) => r.card_id === card.id);
+  deleteCards([card]);
+}
+
+/** Deletes cards in bulk (a whole set in a request or two). Their reviews go with them (ON DELETE CASCADE). */
+export function deleteCards(cards: Card[]) {
+  if (cards.length === 0) return;
+  const ids = new Set(cards.map((k) => k.id));
+  store.removeMany('cards', cards);
+  store.purgeLocal('card_reviews', (r) => ids.has(r.card_id));
+  // Generation events point at the card with ON DELETE SET NULL — mirror that here.
+  store.patchLocal('generation_events', (e) => e.card_id != null && ids.has(e.card_id), { card_id: null });
 }
 
 export function examTargets(): ExamTarget[] {
@@ -420,6 +429,13 @@ export function reviewCard(card: Card, rating: Rating, now = new Date()): CardRe
   });
 }
 
+/** Deletes a whole set: its cards (in bulk) and where Learn was up to in it. */
+export function deleteSet(cards: Card[], noteId: string | null) {
+  deleteCards(cards);
+  const learn = noteId ? learnProgressFor(`note:${noteId}`) : undefined;
+  if (learn) store.remove('learn_progress', learn);
+}
+
 // ---------------------------------------------------------------- learn mode
 export function learnProgressFor(scopeKey: string): LearnProgress | undefined {
   return store.all('learn_progress').find((p) => p.scope_key === scopeKey);
@@ -433,7 +449,7 @@ export function startLearning(scopeKey: string, args: { pocketSize: number; dire
   const now = nowIso();
   return store.insert('learn_progress', {
     user_id: store.userId, scope_key: scopeKey, pocket_size: args.pocketSize, direction: args.direction,
-    done: {}, pocket: [], round: 1, started_at: now, updated_at: now,
+    done: {}, pocket: [], pocket_started_at: null, round: 1, started_at: now, updated_at: now,
   });
 }
 
@@ -443,12 +459,13 @@ export function setLearnSettings(p: LearnProgress, patch: Partial<Pick<LearnProg
   return store.update('learn_progress', p, { ...patch, updated_at: nowIso() });
 }
 
-/** Saves which pocket is underway, so any device resumes the same one. */
+/** Starts a new pocket (saved so any device resumes the same one). Cards graded from now on are finished in it. */
 export function setLearnPocket(p: LearnProgress, pocket: string[]): LearnProgress {
-  return store.update('learn_progress', p, { pocket, updated_at: nowIso() });
+  const now = nowIso();
+  return store.update('learn_progress', p, { pocket, pocket_started_at: now, updated_at: now });
 }
 
-/** One card finished this round. Merged onto the latest copy, so marks from another device aren't lost. */
+/** One card finished in the pocket. Merged onto the latest copy, so marks from another device aren't lost. */
 export function markLearned(scopeKey: string, cardId: string, mark: LearnMark) {
   const p = learnProgressFor(scopeKey);
   if (!p) return;
@@ -458,7 +475,7 @@ export function markLearned(scopeKey: string, cardId: string, mark: LearnMark) {
 /** Start the set over from the first card. Reviews (and so the spaced-repetition schedule) are kept. */
 export function restartLearning(p: LearnProgress): LearnProgress {
   const now = nowIso();
-  return store.update('learn_progress', p, { done: {}, pocket: [], round: p.round + 1, started_at: now, updated_at: now });
+  return store.update('learn_progress', p, { done: {}, pocket: [], pocket_started_at: null, round: p.round + 1, started_at: now, updated_at: now });
 }
 
 // ---------------------------------------------------------------- waiting on

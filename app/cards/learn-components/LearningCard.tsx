@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { Button, Empty, ProgressBar, Row, Screen, T } from '@/ui/components';
+import { Badge, Button, Empty, ProgressBar, Row, Screen, T } from '@/ui/components';
 import { useLayout } from '@/ui/layout';
 import { radius, space, useColors } from '@/ui/theme';
 import { reviewCard } from '@/data/actions';
@@ -8,49 +8,63 @@ import type { Card as CardType } from '@/types/db';
 import type { StudyDirection } from '@/core/learning';
 import { calculateTypingAccuracy, directionForCard, gradeToRating } from '@/core/learning';
 
+type Phase = 'visible' | 'hidden';
+type Grade = 'easy' | 'good' | 'struggling';
+
 interface LearningCardProps {
-  /** The pocket's card ids, in order. */
+  /** The whole pocket, in order (for "3 of 10 done"). */
   pocket: string[];
-  /** Where to start in the pocket — the first card not finished yet. */
-  startIndex: number;
+  /** The pocket's cards not finished yet, in order. */
+  queue: string[];
+  /** Cards in the pocket that are spaced reviews of cards learned before. */
+  reviewIds: ReadonlySet<string>;
   cards: CardType[];
   direction: StudyDirection;
   /** Progress through the whole set this round. */
   learned: number;
   total: number;
-  /** Called as each card is finished, so progress is saved card by card. */
-  onGraded: (cardId: string, grade: Grade, accuracy: number) => void;
+  /** A card stuck (Good or Easy) — saved right away, so progress survives leaving mid-pocket. */
+  onFinished: (cardId: string, mark: { grade: 'easy' | 'good'; accuracy: number; misses: number }) => void;
   onPocketComplete: () => void;
   onOptions: () => void;
+  onFlashcards: () => void;
 }
-
-type Phase = 'visible' | 'hidden' | 'feedback';
-type Grade = 'easy' | 'good' | 'struggling';
 
 // The browser's own focus ring clashes with ours (we recolor the border instead).
 const NO_RING = (Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } : {}) as object;
 
-export default function LearningCard({ pocket, startIndex, cards, direction, learned, total, onGraded, onPocketComplete, onOptions }: LearningCardProps) {
+/**
+ * One pocket of Learn mode. Each card: copy the answer while it's shown, then type it from memory and
+ * say how it went. "Struggling" sends the card to the back of the pocket — it keeps coming back until
+ * it sticks, so a pocket only ends when you've got every card in it.
+ */
+export default function LearningCard({
+  pocket, queue: initialQueue, reviewIds, cards, direction, learned, total, onFinished, onPocketComplete, onOptions, onFlashcards,
+}: LearningCardProps) {
   const c = useColors();
   const { isPhone } = useLayout();
   const [focused, setFocused] = useState(false);
   const cardMap = new Map(cards.map((card) => [card.id, card]));
 
-  const [currentCardIndex, setCurrentCardIndex] = useState(startIndex);
+  const [queue, setQueue] = useState(() => initialQueue.filter((id) => cardMap.has(id)));
+  const [misses, setMisses] = useState<Record<string, number>>({});
   const [phase, setPhase] = useState<Phase>('visible');
   const [visibleText, setVisibleText] = useState('');
   const [hiddenText, setHiddenText] = useState('');
   const [showReveal, setShowReveal] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(4);
+  const [round, setRound] = useState(0); // bumps per card shown, so a card that comes straight back restarts
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hiddenInputRef = useRef<TextInput>(null);
 
-  const currentCardId = pocket[currentCardIndex];
+  const currentCardId = queue[0];
   const currentCard = cardMap.get(currentCardId);
   const cardDirection = currentCard ? directionForCard(direction, currentCard.id) : 'term_to_def';
   const prompt = currentCard ? (cardDirection === 'term_to_def' ? currentCard.term : currentCard.definition) : '';
   const answer = currentCard ? (cardDirection === 'term_to_def' ? currentCard.definition : currentCard.term) : '';
   const answerLabel = cardDirection === 'term_to_def' ? 'definition' : 'term';
+  const doneCount = pocket.length - queue.length;
+  const missedBefore = (misses[currentCardId] ?? 0) > 0;
 
   useEffect(() => {
     if (phase !== 'visible' || !currentCard) return;
@@ -71,7 +85,7 @@ export default function LearningCard({ pocket, startIndex, cards, direction, lea
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [phase, currentCard]);
+  }, [phase, currentCard, round]);
 
   if (!currentCard) {
     return <Screen maxWidth={760}><Empty title="No card to show" /></Screen>;
@@ -83,29 +97,36 @@ export default function LearningCard({ pocket, startIndex, cards, direction, lea
     setTimeout(() => hiddenInputRef.current?.focus(), 200);
   };
 
-  const handleReveal = () => {
-    setShowReveal(true);
+  const nextCard = () => {
+    setPhase('visible');
+    setVisibleText('');
+    setHiddenText('');
+    setShowReveal(false);
+    setTimeRemaining(4);
+    setRound((r) => r + 1);
   };
 
   const handleGrade = (grade: Grade) => {
     reviewCard(currentCard, gradeToRating(grade));
-    onGraded(currentCardId, grade, calculateTypingAccuracy(hiddenText, answer));
-
-    if (currentCardIndex < pocket.length - 1) {
-      setCurrentCardIndex(currentCardIndex + 1);
-      setPhase('visible');
-      setVisibleText('');
-      setHiddenText('');
-      setShowReveal(false);
-      setTimeRemaining(4);
-    } else {
-      onPocketComplete();
+    if (grade === 'struggling') {
+      // Back of the line: it comes round again after the others (or right away if it's the last one).
+      setMisses((m) => ({ ...m, [currentCardId]: (m[currentCardId] ?? 0) + 1 }));
+      setQueue((q) => [...q.slice(1), q[0]]);
+      nextCard();
+      return;
     }
+    onFinished(currentCardId, { grade, accuracy: calculateTypingAccuracy(hiddenText, answer), misses: misses[currentCardId] ?? 0 });
+    if (queue.length <= 1) {
+      onPocketComplete();
+      return;
+    }
+    setQueue((q) => q.slice(1));
+    nextCard();
   };
 
   const input = (hidden: boolean) => (
     <TextInput
-      key={hidden ? 'hidden' : 'visible'}
+      key={`${hidden ? 'hidden' : 'visible'}-${round}`}
       ref={hidden ? hiddenInputRef : undefined}
       autoFocus={!hidden}
       value={hidden ? hiddenText : visibleText}
@@ -134,15 +155,20 @@ export default function LearningCard({ pocket, startIndex, cards, direction, lea
       <View style={{ gap: space.lg, paddingTop: isPhone ? space.xl : space.xxl * 1.5 }}>
         <View style={{ gap: 6 }}>
           <Row style={{ justifyContent: 'space-between' }}>
-            <T variant="small" muted>Card {currentCardIndex + 1} of {pocket.length}</T>
+            <T variant="small" muted>{doneCount} of {pocket.length} done in this pocket</T>
             {phase === 'visible' ? <T variant="small" muted>Hides in {timeRemaining}s</T> : null}
           </Row>
-          <ProgressBar value={currentCardIndex / pocket.length} />
+          <ProgressBar value={doneCount / Math.max(1, pocket.length)} />
           <Row style={{ justifyContent: 'space-between' }}>
             <T variant="small" muted>{learned} of {total} learned in this set</T>
-            <Pressable onPress={onOptions} accessibilityRole="button" hitSlop={8}>
-              <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Options</T>
-            </Pressable>
+            <Row gap={space.md}>
+              <Pressable onPress={onFlashcards} accessibilityRole="button" hitSlop={8}>
+                <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Flashcards</T>
+              </Pressable>
+              <Pressable onPress={onOptions} accessibilityRole="button" hitSlop={8}>
+                <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Options</T>
+              </Pressable>
+            </Row>
           </Row>
         </View>
 
@@ -150,9 +176,12 @@ export default function LearningCard({ pocket, startIndex, cards, direction, lea
             never reads as the answer — especially in Mixed, where the side flips per card. */}
         <View style={{ borderRadius: radius.lg, overflow: 'hidden', backgroundColor: c.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: c.border }}>
           <View style={{ backgroundColor: c.primary, paddingHorizontal: space.xl, paddingVertical: isPhone ? space.xl : space.xxl, gap: space.sm }}>
-            <T variant="label" style={{ color: c.onPrimary, opacity: 0.75 }}>
-              {cardDirection === 'term_to_def' ? 'What does this term mean?' : 'Which term matches this definition?'}
-            </T>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <T variant="label" style={{ color: c.onPrimary, opacity: 0.75 }}>
+                {cardDirection === 'term_to_def' ? 'What does this term mean?' : 'Which term matches this definition?'}
+              </T>
+              {missedBefore ? <Badge label="Again" /> : reviewIds.has(currentCardId) ? <Badge label="Review" /> : null}
+            </Row>
             <T variant="title" style={{ color: c.onPrimary }}>{prompt}</T>
           </View>
 
@@ -175,7 +204,7 @@ export default function LearningCard({ pocket, startIndex, cards, direction, lea
                     <T style={{ lineHeight: 24 }}>{answer}</T>
                   </View>
                 ) : (
-                  <Pressable onPress={handleReveal} accessibilityRole="button" hitSlop={8} style={{ alignSelf: 'flex-start' }}>
+                  <Pressable onPress={() => setShowReveal(true)} accessibilityRole="button" hitSlop={8} style={{ alignSelf: 'flex-start' }}>
                     <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Show the {answerLabel}</T>
                   </Pressable>
                 )}
@@ -192,6 +221,9 @@ export default function LearningCard({ pocket, startIndex, cards, direction, lea
               <Button title="Good" variant="secondary" onPress={() => handleGrade('good')} style={{ flex: 1 }} />
               <Button title="Easy" onPress={() => handleGrade('easy')} style={{ flex: 1 }} />
             </Row>
+            <T variant="small" muted style={{ textAlign: 'center' }}>
+              Struggling brings this card back later in the pocket, and sooner in the days ahead.
+            </T>
           </View>
         ) : null}
       </View>

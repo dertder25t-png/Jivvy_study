@@ -64,6 +64,8 @@ export interface Backend {
   insert(table: TableName, rows: AnyRow[]): Promise<void>;
   update(table: TableName, match: AnyRow, patch: AnyRow): Promise<void>;
   remove(table: TableName, match: AnyRow): Promise<void>;
+  /** Delete many rows of an id-keyed table in one go (REMOVE_CHUNK per request). */
+  removeMany(table: TableName, ids: string[]): Promise<void>;
   /** Local backend persists the whole snapshot; remote backends omit this. */
   persist?(rows: Rows): void;
 }
@@ -72,10 +74,14 @@ export type Op = (
   | { op: 'insert'; table: TableName; rows: AnyRow[] }
   | { op: 'update'; table: TableName; match: AnyRow; patch: AnyRow }
   | { op: 'remove'; table: TableName; match: AnyRow }
+  | { op: 'removeMany'; table: TableName; ids: string[] }
 ) & {
   /** When it was queued (ms). A write the server keeps refusing is given up on after a day. */
   at?: number;
 };
+
+/** How many rows one bulk delete request removes. */
+export const REMOVE_CHUNK = 100;
 
 /** Tables whose writes the server doesn't count in the change counter (write-only logging). */
 export const UNCOUNTED_TABLES = new Set<TableName>(['metric_events']);
@@ -142,6 +148,9 @@ export function applyOps(rows: Rows, ops: Op[]): Rows {
       if (fresh.length > 0) out[t] = [...list, ...fresh];
     } else if (op.op === 'update') {
       out[t] = list.map((r) => (sameKey(t, r, op.match) ? { ...r, ...op.patch } : r));
+    } else if (op.op === 'removeMany') {
+      const gone = new Set(op.ids);
+      out[t] = list.filter((r) => !gone.has(r.id));
     } else {
       out[t] = list.filter((r) => !sameKey(t, r, op.match));
     }
@@ -328,6 +337,16 @@ class Store {
     this.apply({ op: 'remove', table, match: matchOf(table, row as AnyRow) });
   }
 
+  /** Delete many rows at once — one request per REMOVE_CHUNK instead of one per row. */
+  removeMany<K extends TableName>(table: K, rows: Tables[K][]) {
+    if (rows.length === 0) return;
+    if (keyCols(table).join() !== 'id') {
+      for (const r of rows) this.remove(table, r);
+      return;
+    }
+    this.apply({ op: 'removeMany', table, ids: rows.map((r) => (r as AnyRow).id as string) });
+  }
+
   /** Drop rows from memory only (their deletion happens server-side via ON DELETE CASCADE). */
   purgeLocal<K extends TableName>(table: K, predicate: (r: Tables[K]) => boolean) {
     this.change((rows) => ({ ...rows, [table]: rows[table].filter((r) => !predicate(r)) }));
@@ -391,10 +410,13 @@ class Store {
         try {
           if (op.op === 'insert') await b.insert(op.table, op.rows);
           else if (op.op === 'update') await b.update(op.table, op.match, op.patch);
+          else if (op.op === 'removeMany') await b.removeMany(op.table, op.ids);
           else await b.remove(op.table, op.match);
           this.outbox.shift();
           this.syncError = null;
-          if (!UNCOUNTED_TABLES.has(op.table)) this.ownWrites++;
+          if (!UNCOUNTED_TABLES.has(op.table)) {
+            this.ownWrites += op.op === 'removeMany' ? Math.ceil(op.ids.length / REMOVE_CHUNK) : 1;
+          }
         } catch (err) {
           const verdict = classifyFailure(op.op, err);
           if (verdict === 'done') {

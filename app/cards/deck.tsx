@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { deleteCard, saveNote, updateCard } from '@/data/actions';
+import { deleteCard, deleteSet as deleteSetCards, saveNote, updateCard } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { stateFromReviews } from '@/core/scheduling';
 import { groupIntoSets, testDateInfo, type SetGroup } from '@/core/sets';
@@ -94,7 +94,7 @@ export default function Deck() {
   };
 
   const deleteSet = (set: SetGroup) => {
-    for (const k of set.cards) deleteCard(k);
+    deleteSetCards(set.cards, set.noteId);
     setConfirmDeleteSet(null);
   };
 
@@ -148,8 +148,6 @@ export default function Deck() {
   };
 
   const renderSetActions = (setKey: string, set: SetGroup) => {
-    if (!set.noteId) return null; // "Ungrouped cards" isn't a real set — nothing to rename or bulk-delete.
-
     if (renamingSet === setKey) {
       return (
         <Row gap={8}>
@@ -167,6 +165,14 @@ export default function Deck() {
             <Button title="Cancel" small variant="secondary" onPress={() => setConfirmDeleteSet(null)} />
             <Button title={`Delete ${set.cards.length}`} small variant="ghost" onPress={() => deleteSet(set)} />
           </Row>
+        </Row>
+      );
+    }
+    // "Ungrouped cards" isn't tied to a note, so there's nothing to rename or date — but it can go like any set.
+    if (!set.noteId) {
+      return (
+        <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          <Button title="Delete set" small variant="ghost" onPress={() => setConfirmDeleteSet(setKey)} />
         </Row>
       );
     }
