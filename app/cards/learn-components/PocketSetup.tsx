@@ -6,9 +6,9 @@ import { prefs } from '@/data/prefs';
 import type { PocketRecommendation, StudyDirection } from '@/core/learning';
 
 const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = [
-  { key: 'term_to_def', label: 'Term → Definition', hint: 'See the term, type the definition.' },
-  { key: 'def_to_term', label: 'Definition → Term', hint: 'See the definition, type the term.' },
-  { key: 'mixed', label: 'Mixed', hint: 'Each card picks a side — good for testing you both ways.' },
+  { key: 'term_to_def', label: 'Answer with the definition', hint: "You're shown the term and type its definition." },
+  { key: 'def_to_term', label: 'Answer with the term', hint: "You're shown the definition and type the term it describes." },
+  { key: 'mixed', label: 'Mix both', hint: 'Each card asks one way or the other — the card always says which.' },
 ];
 
 interface PocketSetupProps {
@@ -44,7 +44,7 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
       <View style={{ gap: 12 }}>
         <Section title="Learn Mode">
           <T>
-            Type out flashcard definitions twice: first while visible, then from memory. Great for
+            Type each answer twice: first while you can see it, then from memory. Great for
             retention through active recall!
           </T>
         </Section>
@@ -106,11 +106,11 @@ export default function PocketSetup({ recommendation, totalCards, direction, onD
             <T variant="heading">How it works</T>
             <T variant="small" style={{ lineHeight: 20 }}>
               <T variant="small" style={{ fontWeight: '600' }}>Phase 1: </T>
-              See the card and definition. Type out the definition while it's visible.
+              The card asks a question and shows you the answer. Copy the answer while it's visible.
             </T>
             <T variant="small" style={{ lineHeight: 20 }}>
               <T variant="small" style={{ fontWeight: '600' }}>Phase 2: </T>
-              Definition hides. Continue typing from memory to test your recall.
+              The answer hides. Type it again from memory to test your recall.
             </T>
             <T variant="small" style={{ lineHeight: 20 }}>
               <T variant="small" style={{ fontWeight: '600' }}>Rate yourself: </T>
