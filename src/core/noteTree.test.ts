@@ -5,7 +5,7 @@ import type { Note } from '@/types/db';
 function mkNote(id: string, over: Partial<Note> = {}): Note {
   return {
     id, user_id: 'u1', course_id: null, topic_id: null, parent_note_id: null,
-    title: id, body: '', captured_via: 'in_app', course_inferred: false, outline: null,
+    title: id, body: '', captured_via: 'in_app', course_inferred: false, outline: null, test_date: null,
     created_at: `2026-09-${id.padStart(2, '0')}T00:00:00Z`, updated_at: `2026-09-${id.padStart(2, '0')}T00:00:00Z`,
     ...over,
   };
