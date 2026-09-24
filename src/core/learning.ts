@@ -218,11 +218,19 @@ export function resumePoint(
   orderedIds: string[],
   progress: Pick<LearnProgress, 'done' | 'pocket' | 'pocket_size' | 'pocket_started_at'>,
   due: readonly string[] = [],
+  /**
+   * With a study plan (a test date): exactly which new cards may go into a pocket today, in order, and
+   * `due` is every card that's due for review (studied here or anywhere else). Without a plan, new cards
+   * are the ones not learned yet this round, and only cards learned here count as reviews.
+   */
+  planned?: readonly string[],
 ): ResumePoint {
   const inSet = new Set(orderedIds);
   const learnedIds = orderedIds.filter((id) => progress.done[id]);
   const saved = progress.pocket.filter((id) => inSet.has(id));
   const resuming = saved.some((id) => !finishedInPocket(progress, id));
+  const dueNow = due.filter((id) => inSet.has(id) && (planned || progress.done[id]));
+  const dueSet = new Set(dueNow);
 
   let pocket: string[];
   let queue: string[];
@@ -230,14 +238,15 @@ export function resumePoint(
     pocket = saved;
     queue = saved.filter((id) => !finishedInPocket(progress, id));
   } else {
-    const dueLearned = due.filter((id) => inSet.has(id) && progress.done[id]);
-    const unlearned = orderedIds.filter((id) => !progress.done[id]);
-    pocket = [...dueLearned, ...unlearned].slice(0, Math.max(1, progress.pocket_size));
+    const fresh = planned ? planned.filter((id) => inSet.has(id) && !dueSet.has(id)) : orderedIds.filter((id) => !progress.done[id]);
+    pocket = [...dueNow, ...fresh].slice(0, Math.max(1, progress.pocket_size));
     queue = pocket;
   }
-  // A review = a card learned before this pocket: still waiting in it, or finished in it as a review.
+  // A review = a card studied before this pocket: still waiting in it, or finished in it as a review.
   const isReview = (id: string) =>
-    Boolean(progress.done[id]) && (!resuming || !finishedInPocket(progress, id) || Boolean(progress.done[id].review));
+    planned
+      ? dueSet.has(id) || Boolean(progress.done[id]?.review && finishedInPocket(progress, id))
+      : Boolean(progress.done[id]) && (!resuming || !finishedInPocket(progress, id) || Boolean(progress.done[id].review));
   const reviews = pocket.filter(isReview).length;
   return {
     pocket,
@@ -252,10 +261,13 @@ export function resumePoint(
   };
 }
 
-/** Learned cards that are due for review by the end of today, most overdue first. */
-export function dueForReview(cards: CardWithReviews[], done: Record<string, LearnMark>, endOfToday: Date): string[] {
+/**
+ * Cards due for review by the end of today, most overdue first: the ones learned in Learn (`done`), or —
+ * with `done` null, when a study plan is in charge — every card that's been studied anywhere.
+ */
+export function dueForReview(cards: CardWithReviews[], done: Record<string, LearnMark> | null, endOfToday: Date): string[] {
   return cards
-    .filter((k) => done[k.card.id] && k.reviews.length > 0)
+    .filter((k) => (done === null || done[k.card.id]) && k.reviews.length > 0)
     .map((k) => ({ id: k.card.id, dueAt: stateFromReviews(k.reviews).dueAt?.getTime() ?? 0 }))
     .filter((x) => x.dueAt < endOfToday.getTime())
     .sort((a, b) => a.dueAt - b.dueAt)

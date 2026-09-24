@@ -26,11 +26,13 @@ interface PocketSetupProps {
   };
   /** Card check found things to fix in this set. */
   advice?: { count: number; onOpen: () => void };
+  /** With a study plan, the plan sets how many cards a day — said here instead of a cards-per-day suggestion. */
+  planNote?: string;
 }
 
 /** Asked once per set. After that Learn goes straight to your cards; this only comes back from "Options". */
 export default function PocketSetup({
-  recommendation, totalCards, initialSize, initialDirection, initialShuffle, onStart, editing, advice,
+  recommendation, totalCards, initialSize, initialDirection, initialShuffle, onStart, editing, advice, planNote,
 }: PocketSetupProps) {
   const [selected, setSelected] = useState(Math.max(1, Math.min(initialSize, totalCards)));
   const [direction, setDirection] = useState<StudyDirection>(initialDirection);
@@ -79,7 +81,7 @@ export default function PocketSetup({
                 Cards per pocket: {selected}
               </T>
               <T variant="small" muted>
-                {recommendation.rationale}
+                {planNote ?? recommendation.rationale}
               </T>
             </View>
 

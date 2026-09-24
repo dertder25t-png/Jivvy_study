@@ -21,11 +21,10 @@ interface LearningCardProps {
   reviewIds: ReadonlySet<string>;
   cards: CardType[];
   direction: StudyDirection;
-  /** Progress through the whole set this round. */
-  learned: number;
-  total: number;
+  /** Overall progress under the pocket bar: today's plan, or how much of the set is learned. */
+  progressLine: string;
   /** A card stuck (Good or Easy) — saved right away, so progress survives leaving mid-pocket. */
-  onFinished: (cardId: string, mark: { grade: 'easy' | 'good'; accuracy: number; misses: number }) => void;
+  onFinished: (cardId: string, mark: { grade: 'easy' | 'good'; accuracy: number; misses: number; review: boolean }) => void;
   onPocketComplete: () => void;
   onOptions: () => void;
   onFlashcards: () => void;
@@ -40,7 +39,7 @@ const NO_RING = (Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0
  * it sticks, so a pocket only ends when you've got every card in it.
  */
 export default function LearningCard({
-  pocket, queue: initialQueue, reviewIds, cards, direction, learned, total, onFinished, onPocketComplete, onOptions, onFlashcards,
+  pocket, queue: initialQueue, reviewIds, cards, direction, progressLine, onFinished, onPocketComplete, onOptions, onFlashcards,
 }: LearningCardProps) {
   const c = useColors();
   const { isPhone } = useLayout();
@@ -117,7 +116,12 @@ export default function LearningCard({
       return;
     }
     // A split card's "(1–3 of 9)" label isn't part of what you have to recall.
-    onFinished(currentCardId, { grade, accuracy: calculateTypingAccuracy(hiddenText, stripPartLabel(answer)), misses: misses[currentCardId] ?? 0 });
+    onFinished(currentCardId, {
+      grade,
+      accuracy: calculateTypingAccuracy(hiddenText, stripPartLabel(answer)),
+      misses: misses[currentCardId] ?? 0,
+      review: reviewIds.has(currentCardId),
+    });
     if (queue.length <= 1) {
       onPocketComplete();
       return;
@@ -162,7 +166,7 @@ export default function LearningCard({
           </Row>
           <ProgressBar value={doneCount / Math.max(1, pocket.length)} />
           <Row style={{ justifyContent: 'space-between' }}>
-            <T variant="small" muted>{learned} of {total} learned in this set</T>
+            <T variant="small" muted style={{ flex: 1 }}>{progressLine}</T>
             <Row gap={space.md}>
               <Pressable onPress={onFlashcards} accessibilityRole="button" hitSlop={8}>
                 <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Flashcards</T>

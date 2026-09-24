@@ -101,6 +101,24 @@ describe('resumePoint', () => {
     expect(resumePoint(['c1', 'c2'], all, ['c2'])).toMatchObject({ pocket: ['c2'], complete: false, reviews: 1 });
   });
 
+  describe('with a study plan', () => {
+    it("serves the day's reviews (studied anywhere) and only today's share of new cards", () => {
+      // c1, c2 were studied in Review mode (not in Learn); c2 is due. The plan allows 2 new cards today.
+      const p = resumePoint(ids, progress({ pocket_size: 10 }), ['c2'], ['c3', 'c4']);
+      expect(p).toMatchObject({ pocket: ['c2', 'c3', 'c4'], reviews: 1, fresh: 2, isNew: true });
+    });
+
+    it("is done for the day once today's reviews and new cards are through", () => {
+      const p = resumePoint(ids, progress({ done: done('c2', 'c3', 'c4'), pocket: ['c2', 'c3', 'c4'], pocket_size: 10 }), [], []);
+      expect(p).toMatchObject({ pocket: [], complete: true });
+    });
+
+    it('never serves a due review twice in one pocket', () => {
+      const p = resumePoint(ids, progress({ pocket_size: 10 }), ['c3'], ['c3', 'c4']);
+      expect(p.pocket).toEqual(['c3', 'c4']);
+    });
+  });
+
   it('keeps going with cards added to the set after it was finished', () => {
     const p = resumePoint(['c1', 'c2', 'new'], progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2'], pocket_size: 5 }));
     expect(p).toMatchObject({ pocket: ['new'], complete: false, remaining: 1 });
@@ -122,6 +140,11 @@ describe('due reviews', () => {
 
   it("lists learned cards due by the end of today, most overdue first", () => {
     expect(dueForReview(cards, learned, new Date('2026-09-24T05:00:00Z'))).toEqual(['late', 'today']);
+    expect(dueForReview(cards, { today: mark() }, new Date('2026-09-24T05:00:00Z'))).toEqual(['today']);
+  });
+
+  it('with a study plan, counts cards studied anywhere (not just in Learn)', () => {
+    expect(dueForReview(cards, null, new Date('2026-09-24T05:00:00Z'))).toEqual(['late', 'today']);
   });
 
   it('says when the next one comes due', () => {
