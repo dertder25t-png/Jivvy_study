@@ -148,8 +148,34 @@ export function learnScopeKey(scope: LearnScope): string {
   return parts.join('|') || 'all';
 }
 
-/** Learn goes through a set in the order its cards were made (the note's order) — the same on every device. */
-export function learnOrder(cards: Card[]): Card[] {
+/** A well-mixed 32-bit hash (FNV-1a, then an avalanche step), so seeded shuffles look random. */
+function mix(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
+/** A fresh seed for a new shuffled order. */
+export function newShuffleSeed(): string {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * The order Learn goes through a set. Normally the order the cards were made in (the note's order);
+ * with a shuffle seed, a random order — the same on every device for the same seed.
+ */
+export function learnOrder(cards: Card[], shuffleSeed?: string | null): Card[] {
+  if (shuffleSeed) {
+    return [...cards].sort((a, b) => mix(`${shuffleSeed}:${a.id}`) - mix(`${shuffleSeed}:${b.id}`) || a.id.localeCompare(b.id));
+  }
   return [...cards].sort(
     (a, b) =>
       Date.parse(a.created_at) - Date.parse(b.created_at) ||

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { Button, Card, Row, Screen, Section, T } from '@/ui/components';
+import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
 import type { PocketStats } from '@/core/learning';
 
@@ -17,9 +17,12 @@ interface PocketSummaryProps {
   nextReviewIn: string | null;
   /** Cards in this pocket that needed another go. */
   retried: number;
+  /** The set is gone through in shuffled order. */
+  shuffled: boolean;
   onNextPocket: (size: number) => void;
   onFlashcards: () => void;
-  onRestart: () => void;
+  /** Go through the whole set again from the start (optionally shuffled). */
+  onRedo: (shuffle: boolean) => void;
   onReview: () => void;
   onEndSession: () => void;
 }
@@ -27,11 +30,12 @@ interface PocketSummaryProps {
 const cards = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
 
 export default function PocketSummary({
-  stats, complete, dueWaiting, unlearned, total, pocketSize, nextReviewIn, retried,
-  onNextPocket, onFlashcards, onRestart, onReview, onEndSession,
+  stats, complete, dueWaiting, unlearned, total, pocketSize, nextReviewIn, retried, shuffled,
+  onNextPocket, onFlashcards, onRedo, onReview, onEndSession,
 }: PocketSummaryProps) {
   const c = useColors();
   const [nextSize, setNextSize] = useState(pocketSize);
+  const [redoShuffled, setRedoShuffled] = useState(shuffled);
   const left = dueWaiting + unlearned;
 
   // The next pocket: reviews that are due come first, then new cards.
@@ -47,7 +51,7 @@ export default function PocketSummary({
         <Section title={complete ? 'All caught up! 🎉' : 'Pocket Complete! 🎉'}>
           <T>
             {complete
-              ? `You've learned all ${total} cards and nothing's due for review right now.${nextReviewIn ? ` Next review ${nextReviewIn} — they come back in Learn on their own, spaced out so they stick until the test.` : ''}`
+              ? `You've learned all ${total} cards and nothing's due for review right now.${nextReviewIn ? ` Next review ${nextReviewIn} — cards come back in Learn on their own, spaced out so they stick.` : ''}`
               : `Great work! ${total - unlearned} of ${total} cards learned — your place is saved, so you can stop any time.`}
           </T>
         </Section>
@@ -127,6 +131,23 @@ export default function PocketSummary({
           </View>
         </Card>
 
+        {unlearned === 0 ? (
+          <Card tone="primary">
+            <View style={{ gap: 8 }}>
+              <T variant="heading">Redo this set</T>
+              <T variant="small">
+                Go through all {total} cards again from the start — good before a test. Your review schedule is kept, so
+                nothing you've learned is lost.
+              </T>
+              <Row style={{ flexWrap: 'wrap' }}>
+                <Chip label="In order" selected={!redoShuffled} onPress={() => setRedoShuffled(false)} />
+                <Chip label={shuffled ? 'Shuffled (new order)' : 'Shuffled'} selected={redoShuffled} onPress={() => setRedoShuffled(true)} />
+              </Row>
+              <Button title="Redo this set" onPress={() => onRedo(redoShuffled)} style={{ alignSelf: 'flex-start' }} />
+            </View>
+          </Card>
+        ) : null}
+
         {!complete && (
           <Card>
             <View style={{ gap: 12 }}>
@@ -173,9 +194,8 @@ export default function PocketSummary({
         <View style={{ gap: 8 }}>
           {complete ? (
             <>
-              <Button title="Done" onPress={onEndSession} variant="primary" />
               <Button title="Flip through the whole set" onPress={onReview} variant="secondary" />
-              <Button title="Start this set over" onPress={onRestart} variant="ghost" />
+              <Button title="Done" onPress={onEndSession} variant="ghost" />
             </>
           ) : (
             <>

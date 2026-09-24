@@ -329,6 +329,8 @@ export interface LearnProgress {
   pocket: string[];
   /** When that pocket started: a card is finished in it once graded after this. null = long ago. */
   pocket_started_at: ISODateTime | null;
+  /** Shuffled order: the same seed gives the same order on every device. null = the set's own order. */
+  shuffle_seed: string | null;
   /** Goes up each time you start the set over. */
   round: number;
   started_at: ISODateTime;

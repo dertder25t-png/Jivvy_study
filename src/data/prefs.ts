@@ -31,11 +31,15 @@ export interface Prefs {
   prefsUpdatedAt: string | null;
   /** A random tag for this install, so the server can tell this device's changes from another's. Never synced. */
   deviceId: string;
+  /** Learn mode goes through new sets in shuffled order (the default for a set's first time). */
+  learnShuffle: boolean;
+  /** Card check suggestions this device was told to skip ("<card id>:<kind>"). */
+  dismissedAdvice: string[];
 }
 
 /** The settings that follow the account rather than staying on one device. */
 export const SYNCED_PREFS = [
-  'studentName', 'dailyMinutes', 'studyTime', 'learnDirection', 'learnPocketSize', 'subNoteQuickAddEnabled', 'subNoteShortcutKey',
+  'studentName', 'dailyMinutes', 'studyTime', 'learnDirection', 'learnPocketSize', 'learnShuffle', 'subNoteQuickAddEnabled', 'subNoteShortcutKey',
 ] as const satisfies ReadonlyArray<keyof Prefs>;
 
 const KEY = 'studyapp.prefs.v1';
@@ -56,6 +60,8 @@ const DEFAULTS = (): Prefs => ({
   studyTime: '18:00',
   prefsUpdatedAt: null,
   deviceId: '',
+  learnShuffle: false,
+  dismissedAdvice: [],
 });
 
 let current: Prefs = DEFAULTS();

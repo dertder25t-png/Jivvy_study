@@ -3,14 +3,16 @@ import { Alert, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { inScope } from '@/core/session';
 import {
-  calculateRecommendedPocketSize, dueForReview, finishedInPocket, learnOrder, learnScopeKey, nextReviewAt, pocketStats,
-  resumePoint, studiedToday, type StudyDirection,
+  calculateRecommendedPocketSize, dueForReview, finishedInPocket, learnOrder, learnScopeKey, newShuffleSeed, nextReviewAt,
+  pocketStats, resumePoint, studiedToday, type StudyDirection,
 } from '@/core/learning';
 import { addDaysYmd, localDateString, relativeTime, zonedToUtc } from '@/core/time';
 import { markLearned, restartLearning, reviewCard, setLearnPocket, setLearnSettings, startLearning } from '@/data/actions';
+import { useCardAdvice } from '@/data/cardAdvice';
 import { useSemester } from '@/data/derived';
 import { prefs } from '@/data/prefs';
 import { Button, Empty, Screen } from '@/ui/components';
+import { useSafeBack } from '@/ui/nav';
 import PocketSetup from './learn-components/PocketSetup';
 import LearningCard from './learn-components/LearningCard';
 import PocketSummary from './learn-components/PocketSummary';
@@ -34,6 +36,8 @@ export default function LearnMode() {
   }>();
   const sem = useSemester();
   const router = useRouter();
+  const goBack = useSafeBack('/study');
+  const advice = useCardAdvice();
 
   const [phase, setPhase] = useState<Phase>('learning');
   /** The pocket just finished, for its summary. */
@@ -56,7 +60,8 @@ export default function LearnMode() {
   const progress = sem.rows.learn_progress.find((p) => p.scope_key === scopeKey) ?? null;
 
   const inSet = useMemo(() => inScope(sem.cards, scope, sem.examTargets), [sem.cards, scope, sem.examTargets]);
-  const pool = useMemo(() => learnOrder(inSet.map((k) => k.card)), [inSet]);
+  const seed = progress?.shuffle_seed ?? null;
+  const pool = useMemo(() => learnOrder(inSet.map((k) => k.card), seed), [inSet, seed]);
   const ids = useMemo(() => pool.map((c) => c.id), [pool]);
 
   const today = localDateString(sem.now, sem.tz);
@@ -137,6 +142,9 @@ export default function LearnMode() {
     setPhase('pick');
   };
 
+  const setAdvice = scope.noteId ? advice.bySet.get(scope.noteId)?.length ?? 0 : 0;
+  const adviceLink = setAdvice > 0 ? { count: setAdvice, onOpen: () => router.push(`/cards/check?noteId=${scope.noteId}`) } : undefined;
+
   if (!progress || !point) {
     const remembered = prefs.get().learnPocketSize;
     return (
@@ -145,7 +153,9 @@ export default function LearnMode() {
         totalCards={pool.length}
         initialSize={remembered && remembered <= pool.length ? remembered : recommendation.recommended}
         initialDirection={prefs.get().learnDirection}
-        onStart={(size: number, direction: StudyDirection) => startLearning(scopeKey, { pocketSize: size, direction })}
+        initialShuffle={prefs.get().learnShuffle}
+        onStart={(size: number, direction: StudyDirection, shuffle: boolean) => startLearning(scopeKey, { pocketSize: size, direction, shuffle })}
+        advice={adviceLink}
       />
     );
   }
@@ -170,6 +180,7 @@ export default function LearnMode() {
       <FlashcardDrill
         ids={drill}
         cards={pool}
+        shuffle={seed !== null}
         direction={progress.direction}
         onMiss={(cardId) => {
           // Not sure of it after all: it's due again soon, so Learn brings it back later today.
@@ -177,7 +188,7 @@ export default function LearnMode() {
           if (card) reviewCard(card, 1);
         }}
         onBack={() => setPhase(returnTo === 'summary' ? 'summary' : 'learning')}
-        onDone={() => router.back()}
+        onDone={goBack}
       />
     );
   }
@@ -189,11 +200,21 @@ export default function LearnMode() {
         totalCards={pool.length}
         initialSize={progress.pocket_size}
         initialDirection={progress.direction}
-        onStart={(size, direction) => {
-          setLearnSettings(progress, { pocket_size: size, direction });
+        initialShuffle={seed !== null}
+        onStart={(size, direction, shuffle) => {
+          setLearnSettings(progress, { pocket_size: size, direction, shuffle_seed: shuffle ? seed ?? newShuffleSeed() : null });
           setPhase('learning');
         }}
-        editing={{ learned: point.learned, onRestart: restart, onCancel: () => setPhase('learning') }}
+        editing={{
+          learned: point.learned,
+          onRestart: restart,
+          onReshuffle: () => {
+            setLearnSettings(progress, { shuffle_seed: newShuffleSeed() });
+            setPhase('learning');
+          },
+          onCancel: () => setPhase('learning'),
+        }}
+        advice={adviceLink}
       />
     );
   }
@@ -212,14 +233,19 @@ export default function LearnMode() {
         pocketSize={progress.pocket_size}
         nextReviewIn={next ? relativeTime(next, sem.now, sem.tz) : null}
         retried={retried.length}
+        shuffled={seed !== null}
         onNextPocket={(size) => {
           if (size !== progress.pocket_size) setLearnSettings(progress, { pocket_size: size });
           setPhase('learning');
         }}
         onFlashcards={() => openFlashcards(retried.length > 0 ? retried : todays.shaky, phase === 'summary' ? 'summary' : 'learning')}
-        onRestart={restart}
+        onRedo={(shuffle) => {
+          // Everything's learned, so there's nothing to lose — no "are you sure?".
+          restartLearning(progress, { shuffle });
+          setPhase('learning');
+        }}
         onReview={review}
-        onEndSession={() => router.back()}
+        onEndSession={goBack}
       />
     );
   }

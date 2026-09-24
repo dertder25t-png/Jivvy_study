@@ -10,6 +10,8 @@ interface FlashcardDrillProps {
   ids: string[];
   cards: CardType[];
   direction: StudyDirection;
+  /** Go through them in a random order. */
+  shuffle?: boolean;
   /** The first time a card is "Still learning" in this drill — so it comes back in Learn soon. */
   onMiss: (cardId: string) => void;
   onBack: () => void;
@@ -21,11 +23,24 @@ interface FlashcardDrillProps {
  * learning go to the back and come round again until every card is a "Got it".
  * Keys on the web: Space flips, 1 = still learning, 2 = got it.
  */
-export default function FlashcardDrill({ ids, cards, direction, onMiss, onBack, onDone }: FlashcardDrillProps) {
+function shuffled<T>(list: T[]): T[] {
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export default function FlashcardDrill({ ids, cards, direction, shuffle = false, onMiss, onBack, onDone }: FlashcardDrillProps) {
   const c = useColors();
   const { isPhone } = useLayout();
   const byId = new Map(cards.map((k) => [k.id, k]));
-  const [queue, setQueue] = useState(() => ids.filter((id) => byId.has(id)));
+  const deal = () => {
+    const list = ids.filter((id) => byId.has(id));
+    return shuffle ? shuffled(list) : list;
+  };
+  const [queue, setQueue] = useState(deal);
   const [total, setTotal] = useState(queue.length);
   const [flipped, setFlipped] = useState(false);
   const [missed, setMissed] = useState<Set<string>>(new Set());
@@ -83,7 +98,7 @@ export default function FlashcardDrill({ ids, cards, direction, onMiss, onBack, 
             title="Go over them again"
             variant="secondary"
             onPress={() => {
-              const again = ids.filter((id) => byId.has(id));
+              const again = deal();
               setQueue(again);
               setTotal(again.length);
               setMissed(new Set());
