@@ -107,6 +107,11 @@ day 1 is still solid on day 9), then new ones. **Struggling** sends a card to th
 it, and brings it back sooner on the following days. Not sure about some cards? **Flashcards** (from the pocket
 summary, or the link while learning) lets you pick today's shaky ones and flip through them until each is a
 "Got it" — misses come back in Learn later that day. **Start this set over** is under **Options**.
+**With a test date, the study plan runs Learn.** For a set with an upcoming test (or a syllabus exam you have cards
+for) Learn skips setup and serves exactly today's share from the plan — the reviews that are due (wherever you
+studied them) and the number of new cards the plan set for today — then says you're done for the day, with an
+option to learn ahead. Sets without a test date ask once how you'd like to study.
+
 Learn can go through a set **shuffled** (the same order on all your devices; a new one each time you redo it), and a
 finished set can be **redone** from the start (review history is kept).
 Logic: `src/core/learning.ts` (+ `scheduling.ts`); progress is the synced `learn_progress` table.

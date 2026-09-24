@@ -38,10 +38,11 @@ export interface PrepTask {
 
 export const isPrepDone = (t: PrepTask): boolean => t.newCards === 0 && t.reviewCards === 0;
 
-const DEFAULT_HORIZON_DAYS = 60;
+/** How far ahead a test gets a day-by-day plan. */
+export const PREP_HORIZON_DAYS = 60;
 
 export function planTestPrep(args: { targets: PrepTarget[]; now: Date; tz: string; horizonDays?: number }): PrepTask[] {
-  const { targets, now, tz, horizonDays = DEFAULT_HORIZON_DAYS } = args;
+  const { targets, now, tz, horizonDays = PREP_HORIZON_DAYS } = args;
   const today = localDateString(now, tz);
   const dayOf = (iso: string) => localDateString(new Date(iso), tz);
   const endOfToday = zonedToUtc(addDaysYmd(today, 1), '00:00', tz).getTime();
