@@ -3,6 +3,7 @@ import { Pressable, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { deleteCard, deleteSet as deleteSetCards, saveNote, updateCard } from '@/data/actions';
+import { NO_SET, useCardAdvice } from '@/data/cardAdvice';
 import { useSemester } from '@/data/derived';
 import { stateFromReviews } from '@/core/scheduling';
 import { groupIntoSets, testDateInfo, type SetGroup } from '@/core/sets';
@@ -28,6 +29,7 @@ export default function Deck() {
   const sem = useSemester();
   const router = useRouter();
   const c = useColors();
+  const advice = useCardAdvice();
   const cards = sem.rows.cards.filter((k) => k.status !== 'rejected');
 
   const [openSets, setOpenSets] = useState<Set<string>>(new Set());
@@ -148,6 +150,15 @@ export default function Deck() {
   };
 
   const renderSetActions = (setKey: string, set: SetGroup) => {
+    const suggestions = advice.bySet.get(set.noteId ?? NO_SET)?.length ?? 0;
+    const checkButton = (
+      <Button
+        title={suggestions > 0 ? `Card check · ${suggestions}` : 'Card check'}
+        small
+        variant={suggestions > 0 ? 'secondary' : 'ghost'}
+        onPress={() => router.push(`/cards/check?noteId=${set.noteId ?? NO_SET}`)}
+      />
+    );
     if (renamingSet === setKey) {
       return (
         <Row gap={8}>
@@ -172,6 +183,7 @@ export default function Deck() {
     if (!set.noteId) {
       return (
         <Row gap={8} style={{ flexWrap: 'wrap' }}>
+          {checkButton}
           <Button title="Delete set" small variant="ghost" onPress={() => setConfirmDeleteSet(setKey)} />
         </Row>
       );
@@ -194,6 +206,7 @@ export default function Deck() {
     return (
       <Row gap={8} style={{ flexWrap: 'wrap' }}>
         <Button title="Learn mode" small onPress={() => router.push(`/cards/learn?noteId=${set.noteId}`)} />
+        {checkButton}
         <Button title="Rename set" small variant="ghost" onPress={() => { setRenamingSet(setKey); setRenameText(set.title); }} />
         <Button title={set.testDate ? 'Edit test date' : 'Set test date'} small variant="ghost" onPress={() => setEditingTestDateSet(setKey)} />
         <Button title="Delete set" small variant="ghost" onPress={() => setConfirmDeleteSet(setKey)} />

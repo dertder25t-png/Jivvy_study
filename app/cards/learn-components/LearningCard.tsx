@@ -7,6 +7,7 @@ import { reviewCard } from '@/data/actions';
 import type { Card as CardType } from '@/types/db';
 import type { StudyDirection } from '@/core/learning';
 import { calculateTypingAccuracy, directionForCard, gradeToRating } from '@/core/learning';
+import { stripPartLabel } from '@/core/flashcards/cardCheck';
 
 type Phase = 'visible' | 'hidden';
 type Grade = 'easy' | 'good' | 'struggling';
@@ -115,7 +116,8 @@ export default function LearningCard({
       nextCard();
       return;
     }
-    onFinished(currentCardId, { grade, accuracy: calculateTypingAccuracy(hiddenText, answer), misses: misses[currentCardId] ?? 0 });
+    // A split card's "(1–3 of 9)" label isn't part of what you have to recall.
+    onFinished(currentCardId, { grade, accuracy: calculateTypingAccuracy(hiddenText, stripPartLabel(answer)), misses: misses[currentCardId] ?? 0 });
     if (queue.length <= 1) {
       onPocketComplete();
       return;

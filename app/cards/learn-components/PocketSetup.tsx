@@ -15,19 +15,26 @@ interface PocketSetupProps {
   totalCards: number;
   initialSize: number;
   initialDirection: StudyDirection;
-  onStart: (size: number, direction: StudyDirection) => void;
+  initialShuffle: boolean;
+  onStart: (size: number, direction: StudyDirection, shuffle: boolean) => void;
   /** Present when changing settings mid-set (rather than the first time): progress so far + ways out. */
   editing?: {
     learned: number;
     onRestart: () => void;
+    onReshuffle: () => void;
     onCancel: () => void;
   };
+  /** Card check found things to fix in this set. */
+  advice?: { count: number; onOpen: () => void };
 }
 
 /** Asked once per set. After that Learn goes straight to your cards; this only comes back from "Options". */
-export default function PocketSetup({ recommendation, totalCards, initialSize, initialDirection, onStart, editing }: PocketSetupProps) {
+export default function PocketSetup({
+  recommendation, totalCards, initialSize, initialDirection, initialShuffle, onStart, editing, advice,
+}: PocketSetupProps) {
   const [selected, setSelected] = useState(Math.max(1, Math.min(initialSize, totalCards)));
   const [direction, setDirection] = useState<StudyDirection>(initialDirection);
+  const [shuffle, setShuffle] = useState(initialShuffle);
   const c = useColors();
 
   const presets = [...new Set([3, 5, 10, 15, 20, 30, 50, selected])].filter((n) => n <= totalCards).sort((a, b) => a - b);
@@ -38,7 +45,7 @@ export default function PocketSetup({ recommendation, totalCards, initialSize, i
         <View style={{ gap: 8 }}>
           <Button
             title={editing ? 'Save and keep going' : `Study ${selected} cards at a time`}
-            onPress={() => onStart(selected, direction)}
+            onPress={() => onStart(selected, direction, shuffle)}
             variant="primary"
           />
           {editing ? <Button title="Cancel" variant="ghost" onPress={editing.onCancel} /> : null}
@@ -53,6 +60,17 @@ export default function PocketSetup({ recommendation, totalCards, initialSize, i
               : "Type each answer twice: first while you can see it, then from memory. You'll only set this up once — next time Learn picks up right where you left off."}
           </T>
         </Section>
+
+        {advice && advice.count > 0 ? (
+          <Card tone="warn">
+            <T variant="heading">Card check: {advice.count} suggestion{advice.count === 1 ? '' : 's'}</T>
+            <T variant="small">
+              Some cards in this set are long lists, duplicates or give their answer away. Fixing them first makes the set
+              easier to learn.
+            </T>
+            <Button title="Take a look" small variant="secondary" onPress={advice.onOpen} style={{ alignSelf: 'flex-start' }} />
+          </Card>
+        ) : null}
 
         <Card>
           <View style={{ gap: 12 }}>
@@ -103,6 +121,24 @@ export default function PocketSetup({ recommendation, totalCards, initialSize, i
               ))}
             </Row>
             <T variant="small" muted>{DIRECTIONS.find((d) => d.key === direction)?.hint}</T>
+          </View>
+        </Card>
+
+        <Card>
+          <View style={{ gap: 8 }}>
+            <T variant="heading">Order</T>
+            <Row style={{ flexWrap: 'wrap' }}>
+              <Chip label="In order" selected={!shuffle} onPress={() => setShuffle(false)} />
+              <Chip label="Shuffled" selected={shuffle} onPress={() => setShuffle(true)} />
+            </Row>
+            <T variant="small" muted>
+              {shuffle
+                ? 'A random order — the same on all your devices, and a new one each time you redo the set.'
+                : 'The order the cards are in the set.'}
+            </T>
+            {editing && initialShuffle && shuffle ? (
+              <Button title="Reshuffle now" small variant="ghost" onPress={editing.onReshuffle} style={{ alignSelf: 'flex-start' }} />
+            ) : null}
           </View>
         </Card>
 

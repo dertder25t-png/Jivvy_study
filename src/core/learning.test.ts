@@ -33,6 +33,22 @@ describe('learnOrder', () => {
   });
 });
 
+describe('shuffled order', () => {
+  const deck = Array.from({ length: 30 }, (_, i) => ({ id: `card-${i}`, created_at: '2026-09-21T10:00:00.000Z', source_span_start: i }) as Card);
+  const order = (seed?: string | null) => learnOrder(deck, seed).map((c) => c.id);
+
+  it('is the same on every device for the same seed, and a new seed gives a new order', () => {
+    expect(order('abc123')).toEqual(order('abc123'));
+    expect(order('abc123')).not.toEqual(order('xyz789'));
+    expect(order('abc123')).not.toEqual(order(null));
+    expect([...order('abc123')].sort()).toEqual([...order(null)].sort()); // same cards, just reordered
+  });
+
+  it('without a seed keeps the set order', () => {
+    expect(order(null)).toEqual(deck.map((c) => c.id));
+  });
+});
+
 describe('gradeToRating', () => {
   it('treats "Struggling" as a miss, so the card starts over at short gaps', () => {
     expect(gradeToRating('struggling')).toBe(1);

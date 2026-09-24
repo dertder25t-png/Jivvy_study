@@ -7,6 +7,7 @@ import { minutesFor, studyAdvice } from '@/core/session';
 import { colorForSet, groupIntoSets, testDateInfo } from '@/core/sets';
 import { formatPercent } from '@/core/grades';
 import { localDateString, MS, relativeDay, relativeTime } from '@/core/time';
+import { useCardAdvice } from '@/data/cardAdvice';
 import { useSemester } from '@/data/derived';
 import { Badge, Button, Card, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { Columns, useLayout } from '@/ui/layout';
@@ -22,6 +23,7 @@ export default function Study() {
   const c = useColors();
   const { isDesktop, isPhone } = useLayout();
   const { now, tz } = sem;
+  const cardAdvice = useCardAdvice();
 
   const live = useMemo(() => sem.cards.filter((k) => k.card.status !== 'pending' && k.card.status !== 'rejected'), [sem.cards]);
   const due = useMemo(() => dueQueue(live, now), [live, now]);
@@ -211,6 +213,7 @@ export default function Study() {
                     {s.cards.length} card{s.cards.length === 1 ? '' : 's'}
                     {learnedBySet.has(s.noteId!) ? ` · ${Math.min(learnedBySet.get(s.noteId!)!, s.cards.length)} learned` : ''}
                     {dueCount > 0 ? ` · ${dueCount} due` : ''}
+                    {cardAdvice.bySet.get(s.noteId!)?.length ? ` · ${cardAdvice.bySet.get(s.noteId!)!.length} to tidy` : ''}
                   </T>
                   {info ? <T variant="small" color={info.tone === 'warn' ? c.warn : c.muted}>{info.label}</T> : null}
                 </View>
@@ -224,6 +227,24 @@ export default function Study() {
         })}
       </Card>
     </Section>
+  ) : null;
+
+  // Card check across every set: what to split, merge away, or fix — worked out on the device.
+  const adviceCounts = cardAdvice.all.reduce<Record<string, number>>((m, a) => ({ ...m, [a.kind]: (m[a.kind] ?? 0) + 1 }), {});
+  const adviceLine = [
+    adviceCounts.split ? `${adviceCounts.split} long card${adviceCounts.split === 1 ? '' : 's'} to split` : '',
+    adviceCounts.duplicate ? `${adviceCounts.duplicate} duplicate${adviceCounts.duplicate === 1 ? '' : 's'}` : '',
+    (adviceCounts.swap ?? 0) + (adviceCounts.circular ?? 0) ? `${(adviceCounts.swap ?? 0) + (adviceCounts.circular ?? 0)} to fix` : '',
+    (adviceCounts.hard ?? 0) + (adviceCounts.shorten ?? 0) ? `${(adviceCounts.hard ?? 0) + (adviceCounts.shorten ?? 0)} to reword` : '',
+  ].filter(Boolean).join(' · ');
+  const cardCheck = cardAdvice.all.length > 0 ? (
+    <Card tone="alt" onPress={() => router.push('/cards/check')}>
+      <Row style={{ justifyContent: 'space-between' }}>
+        <T variant="heading" style={{ flex: 1 }}>Card check: {cardAdvice.all.length} suggestion{cardAdvice.all.length === 1 ? '' : 's'}</T>
+        <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Take a look</T>
+      </Row>
+      <T variant="small" muted>{adviceLine}. Smaller, cleaner cards are easier to learn.</T>
+    </Card>
   ) : null;
 
   const calendar = sets.length > 0 || sem.prep.length > 0 ? (
@@ -316,7 +337,7 @@ export default function Study() {
     return (
       <Screen>
         <Columns
-          main={<><SyncProblemBanner />{todayPlan}{examHero}{studyHero}{pending}{setList}{insights}{empty}</>}
+          main={<><SyncProblemBanner />{todayPlan}{examHero}{studyHero}{pending}{setList}{cardCheck}{insights}{empty}</>}
           side={<>{calendar}<Section title="Flashcards">{shortcuts}</Section></>}
           sideWidth={340}
         />
@@ -332,6 +353,7 @@ export default function Study() {
       {studyHero}
       {pending}
       {setList}
+      {cardCheck}
       {calendar}
       {insights}
       {empty}

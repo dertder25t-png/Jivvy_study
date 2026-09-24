@@ -107,7 +107,16 @@ day 1 is still solid on day 9), then new ones. **Struggling** sends a card to th
 it, and brings it back sooner on the following days. Not sure about some cards? **Flashcards** (from the pocket
 summary, or the link while learning) lets you pick today's shaky ones and flip through them until each is a
 "Got it" — misses come back in Learn later that day. **Start this set over** is under **Options**.
+Learn can go through a set **shuffled** (the same order on all your devices; a new one each time you redo it), and a
+finished set can be **redone** from the start (review history is kept).
 Logic: `src/core/learning.ts` (+ `scheduling.ts`); progress is the synced `learn_progress` table.
+
+**Card check** (on the device, no AI) suggests fixes that make a set easier to learn: split long lists into groups
+of about three and long answers into one idea per card (labelled "(1–3 of 9)"; the first part keeps its study
+history), delete duplicate copies (the oldest is kept), blank out an answer that gives itself away, swap a card
+whose question is on the answer side, and flag very long or often-missed cards to reword. Every suggestion shows
+exactly what it will do; nothing changes until you apply it. Find it on the Study tab, under each set in Your cards,
+and in Learn's setup. Logic: `src/core/flashcards/cardCheck.ts`.
 
 **A plan for every test.** Give a set a test date (or have a syllabus exam with cards) and each day gets its share:
 learn some new cards, review what's due, and go through everything the day before. It shows as **Today's study

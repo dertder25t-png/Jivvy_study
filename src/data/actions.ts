@@ -12,6 +12,8 @@ import { routeNote, topicForDate } from '@/core/notes';
 import { bodyToOutline, emptyOutline } from '@/core/outline';
 import type { GeneratedItem } from '@/core/flashcards/pipeline';
 import { nextExamFor, nextReview, stateFromReviews, type ExamTarget } from '@/core/scheduling';
+import { newShuffleSeed } from '@/core/learning';
+import type { CardAdvice, CardPart } from '@/core/flashcards/cardCheck';
 import { localDateString, MS } from '@/core/time';
 import { store } from './store';
 import { newId, nowIso } from './id';
@@ -442,20 +444,23 @@ export function learnProgressFor(scopeKey: string): LearnProgress | undefined {
 }
 
 /** First time learning these cards: remember how you want to study them. */
-export function startLearning(scopeKey: string, args: { pocketSize: number; direction: LearnDirection }): LearnProgress {
-  prefs.set({ learnPocketSize: args.pocketSize, learnDirection: args.direction }); // defaults for the next set
+export function startLearning(scopeKey: string, args: { pocketSize: number; direction: LearnDirection; shuffle: boolean }): LearnProgress {
+  // Defaults for the next set.
+  prefs.set({ learnPocketSize: args.pocketSize, learnDirection: args.direction, learnShuffle: args.shuffle });
+  const shuffle_seed = args.shuffle ? newShuffleSeed() : null;
   const existing = learnProgressFor(scopeKey);
-  if (existing) return setLearnSettings(existing, { pocket_size: args.pocketSize, direction: args.direction });
+  if (existing) return setLearnSettings(existing, { pocket_size: args.pocketSize, direction: args.direction, shuffle_seed });
   const now = nowIso();
   return store.insert('learn_progress', {
     user_id: store.userId, scope_key: scopeKey, pocket_size: args.pocketSize, direction: args.direction,
-    done: {}, pocket: [], pocket_started_at: null, round: 1, started_at: now, updated_at: now,
+    done: {}, pocket: [], pocket_started_at: null, shuffle_seed, round: 1, started_at: now, updated_at: now,
   });
 }
 
-export function setLearnSettings(p: LearnProgress, patch: Partial<Pick<LearnProgress, 'pocket_size' | 'direction'>>): LearnProgress {
+export function setLearnSettings(p: LearnProgress, patch: Partial<Pick<LearnProgress, 'pocket_size' | 'direction' | 'shuffle_seed'>>): LearnProgress {
   if (patch.pocket_size) prefs.set({ learnPocketSize: patch.pocket_size });
   if (patch.direction) prefs.set({ learnDirection: patch.direction });
+  if (patch.shuffle_seed !== undefined) prefs.set({ learnShuffle: patch.shuffle_seed !== null });
   return store.update('learn_progress', p, { ...patch, updated_at: nowIso() });
 }
 
@@ -472,10 +477,54 @@ export function markLearned(scopeKey: string, cardId: string, mark: LearnMark) {
   store.update('learn_progress', p, { done: { ...p.done, [cardId]: mark }, updated_at: mark.at });
 }
 
-/** Start the set over from the first card. Reviews (and so the spaced-repetition schedule) are kept. */
-export function restartLearning(p: LearnProgress): LearnProgress {
+/**
+ * Go through the set again from the start (a redo). Reviews — and so the spaced-repetition schedule — are
+ * kept. Shuffled sets get a fresh order each time; `shuffle` switches it on or off for the new round.
+ */
+export function restartLearning(p: LearnProgress, opts: { shuffle?: boolean } = {}): LearnProgress {
   const now = nowIso();
-  return store.update('learn_progress', p, { done: {}, pocket: [], pocket_started_at: null, round: p.round + 1, started_at: now, updated_at: now });
+  const shuffle = opts.shuffle ?? p.shuffle_seed !== null;
+  if (opts.shuffle !== undefined) prefs.set({ learnShuffle: shuffle });
+  return store.update('learn_progress', p, {
+    done: {}, pocket: [], pocket_started_at: null, shuffle_seed: shuffle ? newShuffleSeed() : null,
+    round: p.round + 1, started_at: now, updated_at: now,
+  });
+}
+
+// ---------------------------------------------------------------- card check
+/**
+ * Splits one card into several. The first part stays the original card — so it keeps its review history
+ * and its place — and the rest follow right after it.
+ */
+export function splitCardInto(card: Card, parts: CardPart[]): Card[] {
+  if (parts.length < 2) return [card];
+  const first = store.update('cards', card, { term: parts[0].term, definition: parts[0].definition, card_type: 'term_def', cloze_text: null });
+  const base = Date.parse(card.created_at);
+  const rest: Card[] = parts.slice(1).map((p, i) => ({
+    id: newId(), user_id: store.userId, course_id: card.course_id, topic_id: card.topic_id,
+    term: p.term, definition: p.definition, card_type: 'term_def', cloze_text: null, origin: card.origin,
+    status: card.status === 'edited' ? 'edited' : 'accepted', source_note_id: card.source_note_id,
+    source_span_start: card.source_span_start, source_span_end: card.source_span_end,
+    created_at: new Date(base + i + 1).toISOString(),
+  }));
+  store.insertMany('cards', rest);
+  return [first, ...rest];
+}
+
+/** Does what a card check suggestion says (split / delete / rewrite). Advice with no fix does nothing. */
+export function applyAdvice(advice: CardAdvice) {
+  const card = store.all('cards').find((k) => k.id === advice.cardId);
+  if (!card || !advice.fix) return;
+  if (advice.fix.type === 'split') splitCardInto(card, advice.fix.parts);
+  else if (advice.fix.type === 'delete') deleteCards([card]);
+  else updateCard(card, { term: advice.fix.term, definition: advice.fix.definition });
+}
+
+/** Don't show this suggestion again on this device. */
+export function dismissAdvice(advice: Pick<CardAdvice, 'cardId' | 'kind'>) {
+  const key = `${advice.cardId}:${advice.kind}`;
+  const list = prefs.get().dismissedAdvice.filter((k) => k !== key);
+  prefs.set({ dismissedAdvice: [...list, key].slice(-500) });
 }
 
 // ---------------------------------------------------------------- waiting on
