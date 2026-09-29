@@ -7,7 +7,7 @@ import { attendanceBuffer, courseBuffers, describeLate, lateStatus } from './pol
 import { forecastCrunch, crunchHeadline } from './collisions';
 import { toObligations, type Obligation } from './obligations';
 import { buildComeback, shouldShowComeback } from './triage';
-import { INITIAL_STATE, examReviewQueue, nextReview, standardStep, cardStrength, intervalLabel } from './scheduling';
+import { INITIAL_STATE, examReviewQueue, isDue, nextReview, standardStep, stateFromReviews, cardStrength, intervalLabel } from './scheduling';
 import { budgetNotifications, planNotifications, type PlannedNotification } from './notifications';
 import { correctionFactor, startBy, capacityBefore } from './estimation';
 import { routeNote, coverageGaps, mentionsInstructor } from './notes';
@@ -207,6 +207,26 @@ describe('scheduling', () => {
     expect(squeezed.due_at.getTime()).toBeGreaterThan(NOW.getTime());
     // "Again" is never compressed — it's already soon.
     expect(nextReview(state, 1, NOW, exam).compressed).toBe(false);
+  });
+  it('never makes a passed card due right now in the last 12 hours before the exam', () => {
+    const exam = new Date(NOW.getTime() + 6 * 3_600_000);
+    const state = { interval_days: 3, ease: 2.5, lapses: 0, reps: 2 };
+    const s = nextReview(state, 3, NOW, exam);
+    expect(s.due_at.getTime()).toBeGreaterThan(NOW.getTime());
+    expect(s.due_at.getTime()).toBeLessThanOrEqual(exam.getTime());
+  });
+  it('caps runaway intervals and ease', () => {
+    const s = standardStep({ interval_days: 300, ease: 2.95, lapses: 0, reps: 9 }, 4);
+    expect(s.interval_days).toBe(365);
+    expect(s.ease).toBe(3);
+  });
+  it("doesn't let early passes speed up the next real step", () => {
+    const r = (rating: 3 | 1, reviewed_at: string, due_at: string) => mkReview('x', { rating, reviewed_at, due_at, interval_days: 1 });
+    const early = [r(3, '2026-09-20T10:00:00Z', '2026-09-21T10:00:00Z'), r(3, '2026-09-20T20:00:00Z', '2026-09-21T10:00:00Z')];
+    expect(stateFromReviews(early).reps).toBe(1);
+  });
+  it('treats an unreadable due date as due', () => {
+    expect(isDue([mkReview('x', { due_at: 'nope' })], NOW)).toBe(true);
   });
   it('surfaces the weakest cards for an exam first', () => {
     const course = mkCourse();

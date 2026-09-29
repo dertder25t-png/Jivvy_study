@@ -7,7 +7,7 @@ import {
   pocketStats, resumePoint, studiedToday, type StudyDirection,
 } from '@/core/learning';
 import { PREP_HORIZON_DAYS } from '@/core/testPrep';
-import { MS, addDaysYmd, localDateString, relativeTime, zonedToUtc } from '@/core/time';
+import { addDaysYmd, dateStringDayDiff, localDateString, relativeTime, zonedToUtc } from '@/core/time';
 import { markLearned, restartLearning, reviewCard, setLearnPocket, setLearnSettings, startLearning } from '@/data/actions';
 import { useCardAdvice } from '@/data/cardAdvice';
 import { useSemester } from '@/data/derived';
@@ -89,8 +89,9 @@ export default function LearnMode() {
 
   // A study plan covers exactly one set (or exam) whose test is still ahead — the same targets as
   // "Today's study plan" (core/testPrep.ts), keyed the same way.
+  const today = localDateString(sem.now, sem.tz);
   const planned = Boolean(
-    examDate && examDate > sem.now && examDate.getTime() - sem.now.getTime() <= PREP_HORIZON_DAYS * MS.DAY &&
+    examDate && examDate > sem.now && dateStringDayDiff(localDateString(examDate, sem.tz), today) <= PREP_HORIZON_DAYS &&
       (scopeKey.startsWith('note:') || scopeKey.startsWith('exam:')) && !scopeKey.includes('|'),
   );
   const planTasks = planned ? sem.prep.filter((t) => t.target.key === scopeKey) : [];
@@ -102,16 +103,22 @@ export default function LearnMode() {
   }, [inSet, ids]);
   const newToday = planned ? (ahead ? neverSeen : neverSeen.slice(0, todayTask?.newCards ?? 0)) : undefined;
 
-  const today = localDateString(sem.now, sem.tz);
+  const startOfToday = useMemo(() => zonedToUtc(today, '00:00', sem.tz), [today, sem.tz]);
+  // The day before the test and the test day go through every card, due or not (as the plan counts them).
+  const everything = planned && todayTask != null && todayTask.kind !== 'learn';
   const due = useMemo(
-    () => (progress ? dueForReview(inSet, planned ? null : progress.done, zonedToUtc(addDaysYmd(today, 1), '00:00', sem.tz)) : []),
-    [inSet, progress, planned, today, sem.tz],
+    () => {
+      if (!progress) return [];
+      const end = everything ? new Date(8.64e15) : zonedToUtc(addDaysYmd(today, 1), '00:00', sem.tz);
+      return dueForReview(inSet, planned ? null : progress.done, end, startOfToday);
+    },
+    [inSet, progress, planned, everything, today, sem.tz, startOfToday],
   );
   const todays = useMemo(
     () => studiedToday(inSet, today, (iso) => localDateString(new Date(iso), sem.tz)),
     [inSet, today, sem.tz],
   );
-  const point = progress ? resumePoint(ids, progress, due, newToday) : null;
+  const point = progress ? resumePoint(ids, progress, due, newToday, startOfToday) : null;
   const pocketKey = point?.pocket.join(',') ?? '';
 
   // Today's share, as the plan counts it (what's done today is already taken off what's left).
@@ -223,8 +230,10 @@ export default function LearnMode() {
         direction={progress.direction}
         onMiss={(cardId) => {
           // Not sure of it after all: it's due again soon, so Learn brings it back later today.
+          // Only a card that's been studied before: a miss must not make a never-learned card count as seen.
           const card = pool.find((k) => k.id === cardId);
-          if (card) reviewCard(card, 1);
+          const studied = inSet.some((k) => k.card.id === cardId && k.reviews.length > 0);
+          if (card && studied) reviewCard(card, 1);
         }}
         onBack={() => setPhase(returnTo === 'summary' ? 'summary' : 'learning')}
         onDone={goBack}

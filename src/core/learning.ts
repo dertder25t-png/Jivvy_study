@@ -93,40 +93,92 @@ export function calculateRecommendedPocketSize(
   };
 }
 
-/**
- * Calculate typing accuracy: how many words matched between typed and actual definition.
- */
-export function calculateTypingAccuracy(typed: string, actual: string): number {
-  const normalizeText = (text: string) =>
-    text
-      .toLowerCase()
-      .trim()
-      .split(/\s+/)
-      .filter((w) => w.length > 0);
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'of', 'to', 'and', 'or', 'in', 'on', 'at', 'is', 'are', 'was', 'were', 'be', 'been', 'it', 'its',
+  'that', 'this', 'for', 'as', 'by', 'with', 'from', 'which', 'who', 'has', 'have', 'had',
+]);
 
-  const typedWords = normalizeText(typed);
-  const actualWords = normalizeText(actual);
+/** Lowercase, no accents or punctuation, split into words. */
+function words(text: string): string[] {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/['\u2019]/g, '')
+    .replace(/[^a-z0-9\u00c0-\uffff]+/g, ' ')
+    .split(' ')
+    .filter((w) => w.length > 0);
+}
 
-  if (actualWords.length === 0) return 1;
-  if (typedWords.length === 0) return 0;
+/** The words worth checking: filler words dropped (unless that would leave nothing). */
+function keyWords(text: string): string[] {
+  const all = words(text);
+  const key = all.filter((w) => !STOPWORDS.has(w));
+  return key.length > 0 ? key : all;
+}
 
-  let matches = 0;
-  const wordMap = new Map<string, number>();
-
-  // Count occurrences in actual definition
-  for (const word of actualWords) {
-    wordMap.set(word, (wordMap.get(word) ?? 0) + 1);
-  }
-
-  // Count matches (up to the count in actual)
-  for (const word of typedWords) {
-    if (wordMap.has(word) && wordMap.get(word)! > 0) {
-      matches++;
-      wordMap.set(word, wordMap.get(word)! - 1);
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const up = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = up;
     }
   }
+  return prev[b.length];
+}
 
-  return matches / actualWords.length;
+/** Same word, allowing a typo (more for longer words) or a plural "s". */
+function sameWord(typed: string, actual: string): boolean {
+  if (typed === actual) return true;
+  if (typed + 's' === actual || actual + 's' === typed) return true;
+  const len = Math.max(typed.length, actual.length);
+  const allowed = len >= 9 ? 2 : len >= 5 ? 1 : 0;
+  return allowed > 0 && editDistance(typed, actual) <= allowed;
+}
+
+export type AnswerVerdict = 'right' | 'close' | 'wrong';
+export interface AnswerCheck {
+  verdict: AnswerVerdict;
+  /** Share of the answer's key words that were typed (0-1). */
+  score: number;
+  /** Key words of the answer that weren't typed. */
+  missing: string[];
+}
+
+/**
+ * Checks a typed answer against the real one — what happens when you hit Enter. Case, punctuation, accents,
+ * filler words, word order and small typos don't matter. A short answer (a term, up to three key words) has
+ * to be all there; a long one (a definition) is right at 80% of its key words and "almost" at 60%.
+ */
+export function checkAnswer(typed: string, actual: string): AnswerCheck {
+  const target = keyWords(actual);
+  if (target.length === 0) return { verdict: 'right', score: 1, missing: [] };
+  const given = keyWords(typed);
+  if (given.length === 0) return { verdict: 'wrong', score: 0, missing: target };
+
+  const pool = [...given];
+  const missing: string[] = [];
+  for (const w of target) {
+    const at = pool.findIndex((g) => sameWord(g, w));
+    if (at >= 0) pool.splice(at, 1);
+    else missing.push(w);
+  }
+  const score = (target.length - missing.length) / target.length;
+  // Typing far more than the answer holds isn't recall, it's a word dump.
+  const dump = given.length > target.length * 2.5 + 3;
+  let verdict: AnswerVerdict;
+  if (target.length <= 3) verdict = score === 1 && !dump ? 'right' : 'wrong';
+  else verdict = dump ? 'wrong' : score >= 0.8 ? 'right' : score >= 0.6 ? 'close' : 'wrong';
+  return { verdict, score, missing };
+}
+
+/** Calculate typing accuracy: the share of the answer's key words that were typed. */
+export function calculateTypingAccuracy(typed: string, actual: string): number {
+  return checkAnswer(typed, actual).score;
 }
 
 // ---------------------------------------------------------------- progress
@@ -209,6 +261,29 @@ export function finishedInPocket(progress: Pick<LearnProgress, 'done' | 'pocket_
   return Date.parse(mark.at) >= (progress.pocket_started_at ? Date.parse(progress.pocket_started_at) : 0);
 }
 
+/** Share of a pocket given to reviews when there are both reviews and new cards waiting. */
+const REVIEW_SHARE = 0.6;
+
+/**
+ * A pocket from the cards due for review and the new ones: about 60% reviews and 40% new when both are
+ * waiting (either fills what the other can't), then interleaved review, new, review, new… so neither a
+ * pile of overdue reviews nor a run of new cards wears you out — and a backlog after missed days can't
+ * push new cards out for good.
+ */
+export function mixPocket(reviews: readonly string[], fresh: readonly string[], size: number): string[] {
+  let r = Math.min(reviews.length, Math.ceil(size * REVIEW_SHARE));
+  const n = Math.min(fresh.length, size - r);
+  r = Math.min(reviews.length, size - n);
+  const rs = reviews.slice(0, r);
+  const ns = fresh.slice(0, n);
+  const out: string[] = [];
+  for (let i = 0; i < Math.max(rs.length, ns.length); i++) {
+    if (i < rs.length) out.push(rs[i]);
+    if (i < ns.length) out.push(ns[i]);
+  }
+  return out;
+}
+
 /**
  * Where to pick up: the pocket you were partway through (minus any cards deleted since), or else a new
  * one — first the learned cards that are due for review (`due`, most overdue first), so nothing learned
@@ -224,11 +299,14 @@ export function resumePoint(
    * are the ones not learned yet this round, and only cards learned here count as reviews.
    */
   planned?: readonly string[],
+  /** Start of the user's day: a pocket begun before it is stale (missed days) and is rebuilt, not resumed. */
+  startOfToday?: Date,
 ): ResumePoint {
   const inSet = new Set(orderedIds);
   const learnedIds = orderedIds.filter((id) => progress.done[id]);
   const saved = progress.pocket.filter((id) => inSet.has(id));
-  const resuming = saved.some((id) => !finishedInPocket(progress, id));
+  const stale = startOfToday != null && progress.pocket_started_at != null && Date.parse(progress.pocket_started_at) < startOfToday.getTime();
+  const resuming = !stale && saved.some((id) => !finishedInPocket(progress, id));
   const dueNow = due.filter((id) => inSet.has(id) && (planned || progress.done[id]));
   const dueSet = new Set(dueNow);
 
@@ -239,7 +317,7 @@ export function resumePoint(
     queue = saved.filter((id) => !finishedInPocket(progress, id));
   } else {
     const fresh = planned ? planned.filter((id) => inSet.has(id) && !dueSet.has(id)) : orderedIds.filter((id) => !progress.done[id]);
-    pocket = [...dueNow, ...fresh].slice(0, Math.max(1, progress.pocket_size));
+    pocket = mixPocket(dueNow, fresh, Math.max(1, progress.pocket_size));
     queue = pocket;
   }
   // A review = a card studied before this pocket: still waiting in it, or finished in it as a review.
@@ -262,15 +340,24 @@ export function resumePoint(
 }
 
 /**
- * Cards due for review by the end of today, most overdue first: the ones learned in Learn (`done`), or —
- * with `done` null, when a study plan is in charge — every card that's been studied anywhere.
+ * Cards due for review by the end of today: the ones learned in Learn (`done`), or — with `done` null, when a
+ * study plan is in charge — every card that's been studied anywhere. Cards that lapsed come first, then the
+ * most overdue. A card already passed (Good or Easy) since `startOfToday` isn't served again the same day,
+ * even if the test is close enough that its next review lands before midnight.
  */
-export function dueForReview(cards: CardWithReviews[], done: Record<string, LearnMark> | null, endOfToday: Date): string[] {
+export function dueForReview(
+  cards: CardWithReviews[],
+  done: Record<string, LearnMark> | null,
+  endOfToday: Date,
+  startOfToday?: Date,
+): string[] {
   return cards
     .filter((k) => (done === null || done[k.card.id]) && k.reviews.length > 0)
-    .map((k) => ({ id: k.card.id, dueAt: stateFromReviews(k.reviews).dueAt?.getTime() ?? 0 }))
+    .map((k) => ({ id: k.card.id, s: stateFromReviews(k.reviews) }))
+    .filter(({ s }) => !(startOfToday && s.lastRating != null && s.lastRating > 1 && s.lastReviewedAt && s.lastReviewedAt.getTime() >= startOfToday.getTime()))
+    .map(({ id, s }) => ({ id, lapsed: s.lastRating === 1, dueAt: s.dueAt?.getTime() ?? 0 }))
     .filter((x) => x.dueAt < endOfToday.getTime())
-    .sort((a, b) => a.dueAt - b.dueAt)
+    .sort((a, b) => Number(b.lapsed) - Number(a.lapsed) || a.dueAt - b.dueAt)
     .map((x) => x.id);
 }
 

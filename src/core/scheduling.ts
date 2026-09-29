@@ -16,6 +16,9 @@ const MIN_EASE = 1.3;
 const EXAM_BUFFER_MS = 12 * MS.HOUR;
 const AGAIN_MS = 10 * MS.MIN;
 const MIN_GAP_MS = 4 * MS.HOUR;
+/** No card waits longer than this, and ease can't run away with a streak of Easy. */
+const MAX_INTERVAL_DAYS = 365;
+const MAX_EASE = 3;
 
 export interface Scheduled {
   interval_days: number;
@@ -44,7 +47,7 @@ export function standardStep(state: SrsState, rating: Rating): { interval_days: 
     ease += 0.15;
     interval = state.reps === 0 || state.interval_days < 1 ? 3 : state.interval_days * ease * 1.3;
   }
-  return { interval_days: interval, ease, lapses: state.lapses, reps };
+  return { interval_days: Math.min(MAX_INTERVAL_DAYS, interval), ease: Math.min(MAX_EASE, ease), lapses: state.lapses, reps };
 }
 
 /**
@@ -90,9 +93,12 @@ export function nextReview(
     const deadline = examAt.getTime() - EXAM_BUFFER_MS;
     if (due.getTime() > deadline) {
       const window = deadline - now.getTime();
-      // Land inside the window; halve it so there is room for another pass.
-      const gap = window <= MIN_GAP_MS ? Math.max(0, window) : Math.max(MIN_GAP_MS, window / 2);
-      due = new Date(now.getTime() + gap);
+      // Land inside the window; halve it so there is room for another pass. Past the deadline (the last
+      // 12 hours) a passed card still waits a few hours — never "due right now", which would loop it —
+      // but never past the exam itself.
+      due = window <= MIN_GAP_MS
+        ? new Date(Math.min(now.getTime() + MIN_GAP_MS, examAt.getTime()))
+        : new Date(now.getTime() + Math.max(MIN_GAP_MS, window / 2));
       compressed = true;
     }
   }
@@ -111,13 +117,27 @@ export function stateFromReviews(reviews: CardReview[]): SrsState & { lastRating
     reps: countTrailingSuccesses(sorted),
     lastRating: last.rating,
     lastReviewedAt: new Date(last.reviewed_at),
-    dueAt: new Date(last.due_at),
+    dueAt: validDate(last.due_at),
   };
 }
 
+/** A date, or null when the stored value is missing or unreadable (so the card counts as due, not lost). */
+function validDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Passes in a row at the end of the history. A pass given early (the due date left untouched) doesn't
+ * count — it didn't move the card forward, so it shouldn't speed up the next real step.
+ */
 function countTrailingSuccesses(sorted: CardReview[]): number {
   let n = 0;
-  for (let i = sorted.length - 1; i >= 0 && sorted[i].rating > 1; i--) n++;
+  for (let i = sorted.length - 1; i >= 0 && sorted[i].rating > 1; i--) {
+    const early = i > 0 && sorted[i - 1].rating > 1 && sorted[i].due_at === sorted[i - 1].due_at;
+    if (!early) n++;
+  }
   return n;
 }
 

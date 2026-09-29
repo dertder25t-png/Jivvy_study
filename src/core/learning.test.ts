@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card, CardReview, LearnMark, LearnProgress } from '@/types/db';
 import {
-  dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, nextReviewAt, pocketStats, resumePoint, studiedToday,
+  checkAnswer, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
 } from './learning';
 import { nextReview, stateFromReviews, type CardWithReviews } from './scheduling';
 import { mkCard, mkReview } from './testutil';
@@ -193,5 +193,90 @@ describe('spacing toward a test', () => {
     expect(studyDays.length).toBeGreaterThanOrEqual(4); // not learned once and forgotten
     expect(studyDays[1]).toBe(1); // the next day, then spreading out
     expect(9 - studyDays[studyDays.length - 1]).toBeLessThanOrEqual(2); // fresh right before the test
+  });
+});
+
+describe('checkAnswer', () => {
+  const def = 'The powerhouse of the cell that produces ATP through cellular respiration';
+
+  it('ignores case, punctuation, accents, filler words and word order', () => {
+    expect(checkAnswer('CELL powerhouse!! produces atp, through cellular respiration', def).verdict).toBe('right');
+    expect(checkAnswer('  ', def)).toMatchObject({ verdict: 'wrong', score: 0 });
+    expect(checkAnswer('café', 'Cafe').verdict).toBe('right');
+  });
+
+  it('forgives small typos and plurals', () => {
+    expect(checkAnswer('powerhose of the cell that produces atp throgh cellular respiraton', def).verdict).toBe('right');
+    expect(checkAnswer('mitochondrion', 'Mitochondria').verdict).toBe('right');
+  });
+
+  it('is lenient on long definitions but strict on short terms', () => {
+    expect(checkAnswer('powerhouse cell produces ATP cellular', def).verdict).toBe('close');
+    expect(checkAnswer('something about energy', def).verdict).toBe('wrong');
+    expect(checkAnswer('cell wall', 'cell membrane').verdict).toBe('wrong');
+    expect(checkAnswer('Cell Membrane', 'the cell membrane').verdict).toBe('right');
+  });
+
+  it('lists what was left out', () => {
+    expect(checkAnswer('powerhouse of the cell', def).missing).toContain('atp');
+  });
+
+  it('does not accept a word dump', () => {
+    const dump = Array.from({ length: 40 }, () => 'powerhouse cell produces atp cellular respiration').join(' ');
+    expect(checkAnswer(dump, def).verdict).toBe('wrong');
+  });
+});
+
+describe('mixPocket', () => {
+  it('interleaves reviews and new cards, about 60/40', () => {
+    const r = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
+    const n = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
+    const p = mixPocket(r, n, 10);
+    expect(p).toHaveLength(10);
+    expect(p.filter((x) => x.startsWith('r'))).toHaveLength(6);
+    expect(p.slice(0, 4)).toEqual(['r1', 'n1', 'r2', 'n2']);
+  });
+
+  it("lets a big backlog fill what new cards can't, and vice versa", () => {
+    expect(mixPocket(['r1', 'r2', 'r3', 'r4'], [], 3)).toEqual(['r1', 'r2', 'r3']);
+    expect(mixPocket([], ['n1', 'n2', 'n3'], 2)).toEqual(['n1', 'n2']);
+    expect(mixPocket(['r1'], ['n1', 'n2', 'n3'], 3)).toEqual(['r1', 'n1', 'n2']);
+  });
+
+  it('after missed days a backlog still leaves room for new cards', () => {
+    const backlog = Array.from({ length: 30 }, (_, i) => `r${i}`);
+    const p = mixPocket(backlog, ['n1', 'n2', 'n3', 'n4'], 10);
+    expect(p.filter((x) => x.startsWith('n'))).toHaveLength(4);
+  });
+});
+
+describe('a pocket left from an earlier day', () => {
+  it('is rebuilt instead of resumed', () => {
+    const stale = progress({ done: done('c1'), pocket: ['c1', 'c2', 'c3'], pocket_started_at: '2026-09-20T10:00:00.000Z' });
+    const p = resumePoint(ids, stale, [], undefined, new Date('2026-09-23T00:00:00Z'));
+    expect(p.isNew).toBe(true);
+    expect(p.pocket).toEqual(['c2', 'c3', 'c4']);
+    // Same day: still resumed.
+    expect(resumePoint(ids, stale, [], undefined, new Date('2026-09-19T00:00:00Z')).isNew).toBe(false);
+  });
+});
+
+describe('due reviews after a Good today', () => {
+  const k = (id: string, reviews: Partial<CardReview>[]): CardWithReviews => ({ card: mkCard('c', { id }), reviews: reviews.map((r) => mkReview(id, r)) });
+  const endOfToday = new Date('2026-09-24T05:00:00Z');
+  const startOfToday = new Date('2026-09-23T05:00:00Z');
+
+  it("doesn't bring back a card that was passed today, even if the test makes it due before midnight", () => {
+    const passed = k('passed', [{ reviewed_at: '2026-09-23T14:00:00Z', rating: 3, due_at: '2026-09-23T20:00:00Z' }]);
+    const failed = k('failed', [{ reviewed_at: '2026-09-23T14:00:00Z', rating: 1, due_at: '2026-09-23T14:10:00Z' }]);
+    expect(dueForReview([passed, failed], null, endOfToday)).toEqual(['failed', 'passed']);
+    expect(dueForReview([passed, failed], null, endOfToday, startOfToday)).toEqual(['failed']);
+  });
+
+  it('puts lapsed cards before the merely overdue, and treats an unreadable due date as due', () => {
+    const late = k('late', [{ reviewed_at: '2026-09-10T10:00:00Z', rating: 3, due_at: '2026-09-11T10:00:00Z' }]);
+    const lapsed = k('lapsed', [{ reviewed_at: '2026-09-20T10:00:00Z', rating: 1, due_at: '2026-09-20T10:10:00Z' }]);
+    const broken = k('broken', [{ reviewed_at: '2026-09-20T10:00:00Z', rating: 3, due_at: 'garbage' }]);
+    expect(dueForReview([late, lapsed, broken], null, endOfToday, startOfToday)).toEqual(['lapsed', 'broken', 'late']);
   });
 });
