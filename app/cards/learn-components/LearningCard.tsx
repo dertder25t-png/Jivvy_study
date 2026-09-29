@@ -134,11 +134,11 @@ export default function LearningCard({
   /**
    * What the check means for the schedule. Right passes (Easy only when a review was recalled cold, first
    * try, near word-for-word); wrong or almost sends it round again. Peeking at the answer first counts
-   * against a review — you didn't recall it.
+   * as struggling, whatever you type — you didn't recall it.
    */
   const autoGrade = (r: AnswerCheck): Grade => {
     if (r.verdict !== 'right') return 'struggling';
-    if (hinted && isReview) return 'struggling';
+    if (hinted) return 'struggling';
     return isReview && !hinted && !missedBefore && r.score >= 0.95 ? 'easy' : 'good';
   };
 
