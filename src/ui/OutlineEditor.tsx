@@ -42,6 +42,9 @@ function Row({
   onChangeText, onSubmit, onKeyPress, onSelectionChange, onToggleCollapsed, onToggleChecked, onMoveUp, onMoveDown,
 }: RowProps) {
   const c = useColors();
+  // Long lines wrap onto more rows instead of scrolling sideways out of sight; the web textarea
+  // doesn't grow by itself, so track its content height.
+  const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', minHeight: 32 }}>
       {Array.from({ length: depth }).map((_, level) => (
@@ -65,10 +68,20 @@ function Row({
         onChangeText={onChangeText}
         onFocus={onFocus}
         onBlur={onBlur}
+        multiline
+        scrollEnabled={false}
+        submitBehavior="submit"
         onSubmitEditing={onSubmit}
         blurOnSubmit={false}
+        onContentSizeChange={(e) => setInputHeight(Math.ceil(e.nativeEvent.contentSize.height))}
         onKeyPress={(e: any) => {
           if (e.nativeEvent.key === 'Tab') e.preventDefault?.();
+          if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.shiftKey) {
+            // a multiline web textarea would insert a newline; Enter starts the next bullet instead
+            e.preventDefault?.();
+            onSubmit();
+            return;
+          }
           onKeyPress(e.nativeEvent.key, !!e.shiftKey);
         }}
         onSelectionChange={(e) => onSelectionChange(e.nativeEvent.selection)}
@@ -76,7 +89,7 @@ function Row({
         placeholder={depth === 0 ? 'Start typing…' : undefined}
         placeholderTextColor={c.muted}
         style={{
-          flex: 1, color: node.checked ? c.muted : c.text, fontSize: BODY_SIZE, lineHeight: BODY_SIZE + 6,
+          flex: 1, height: inputHeight, color: node.checked ? c.muted : c.text, fontSize: BODY_SIZE, lineHeight: BODY_SIZE + 6,
           textDecorationLine: node.checked ? 'line-through' : 'none', paddingVertical: 5, paddingHorizontal: 0,
           borderWidth: 0, backgroundColor: 'transparent',
           ...(Platform.OS === 'web' ? ({ outlineStyle: 'none', outlineWidth: 0 } as object) : {}),
