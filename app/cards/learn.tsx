@@ -3,7 +3,7 @@ import { Alert, Platform } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { inScope } from '@/core/session';
 import {
-  calculateRecommendedPocketSize, dueForReview, finishedInPocket, learnOrder, learnScopeKey, newShuffleSeed, nextReviewAt,
+  dailyNewCards, dueForReview, finishedInPocket, learnOrder, learnScopeKey, newShuffleSeed, nextReviewAt,
   pocketStats, resumePoint, studiedToday, type StudyDirection,
 } from '@/core/learning';
 import { PREP_HORIZON_DAYS } from '@/core/testPrep';
@@ -22,17 +22,15 @@ import FlashcardDrill from './learn-components/FlashcardDrill';
 
 type Phase = 'learning' | 'summary' | 'options' | 'pick' | 'flashcards';
 
-/** Pocket size when Learn starts on its own for a set with a study plan (changeable under Options). */
-const PLANNED_POCKET = 10;
-
 /**
- * Learn mode. Each pocket starts with the cards that are due for review (so what you learned on day 1 is
- * still there on day 9), then new cards; cards you're not sure of can be drilled as flashcards.
+ * Learn mode. Each session starts with every card that's due for review (so what you learned on day 1 is
+ * still there on day 9), mixed with the new cards up today; cards you're not sure of can be drilled as
+ * flashcards. There's no size to pick: the study plan (or, with no test date, `dailyNewCards`) decides.
  *
  * With a test coming up (a set's test date, or a syllabus exam) the study plan is in charge: Learn starts
  * straight away — no setup — and serves exactly today's share (the reviews that are due, and the number
  * of new cards the plan set for today), then says you're done for the day. Without a test date it asks
- * once how you'd like to study (pocket size, what to type, order) and goes through the set.
+ * once how you'd like to study (what to type, order) and paces the set itself.
  * Either way it picks up where you left off, on any device.
  */
 export default function LearnMode() {
@@ -101,9 +99,15 @@ export default function LearnMode() {
     const seen = new Set(inSet.filter((k) => k.reviews.length > 0).map((k) => k.card.id));
     return ids.filter((id) => !seen.has(id));
   }, [inSet, ids]);
-  const newToday = planned ? (ahead ? neverSeen : neverSeen.slice(0, todayTask?.newCards ?? 0)) : undefined;
-
   const startOfToday = useMemo(() => zonedToUtc(today, '00:00', sem.tz), [today, sem.tz]);
+  // No test date: new cards go at a steady pace (what's learned today is taken off today's share).
+  const learnedNewToday = progress
+    ? Object.values(progress.done).filter((m) => !m.review && Date.parse(m.at) >= startOfToday.getTime()).length
+    : 0;
+  const unlearned = useMemo(() => (progress ? ids.filter((id) => !progress.done[id]) : []), [ids, progress]);
+  const newToday = planned
+    ? (ahead ? neverSeen : neverSeen.slice(0, todayTask?.newCards ?? 0))
+    : ahead ? unlearned : unlearned.slice(0, Math.max(0, dailyNewCards(ids.length) - learnedNewToday));
   // The day before the test and the test day go through every card, due or not (as the plan counts them).
   const everything = planned && todayTask != null && todayTask.kind !== 'learn';
   const due = useMemo(
@@ -118,7 +122,9 @@ export default function LearnMode() {
     () => studiedToday(inSet, today, (iso) => localDateString(new Date(iso), sem.tz)),
     [inSet, today, sem.tz],
   );
-  const point = progress ? resumePoint(ids, progress, due, newToday, startOfToday) : null;
+  const point = progress
+    ? (planned ? resumePoint(ids, progress, due, newToday, startOfToday) : resumePoint(ids, progress, due, undefined, startOfToday, newToday))
+    : null;
   const pocketKey = point?.pocket.join(',') ?? '';
 
   // Today's share, as the plan counts it (what's done today is already taken off what's left).
@@ -126,12 +132,6 @@ export default function LearnMode() {
   const todayTotal = todayTask ? todayDone + todayTask.newCards + todayTask.reviewCards : 0;
   const testIn = examDate ? relativeTime(examDate, sem.now, sem.tz) : '';
   const seenCount = ids.length - neverSeen.length;
-
-  const remaining = point?.remaining ?? pool.length;
-  const recommendation = useMemo(
-    () => calculateRecommendedPocketSize(remaining, examDate, sem.now),
-    [remaining, examDate, sem.now],
-  );
 
   // A freshly picked pocket is saved (with its start time), so every device resumes this same one.
   useEffect(() => {
@@ -143,7 +143,7 @@ export default function LearnMode() {
   useEffect(() => {
     if (progress || !planned || pool.length === 0) return;
     const p = prefs.get();
-    startLearning(scopeKey, { pocketSize: p.learnPocketSize ?? PLANNED_POCKET, direction: p.learnDirection, shuffle: p.learnShuffle });
+    startLearning(scopeKey, { direction: p.learnDirection, shuffle: p.learnShuffle });
   }, [progress, planned, pool.length, scopeKey]);
 
   if (pool.length === 0) {
@@ -192,15 +192,12 @@ export default function LearnMode() {
 
   if (!progress || !point) {
     if (planned) return <Screen maxWidth={760}>{null}</Screen>; // starting (see the effect above)
-    const remembered = prefs.get().learnPocketSize;
     return (
       <PocketSetup
-        recommendation={recommendation}
         totalCards={pool.length}
-        initialSize={remembered && remembered <= pool.length ? remembered : recommendation.recommended}
         initialDirection={prefs.get().learnDirection}
         initialShuffle={prefs.get().learnShuffle}
-        onStart={(size: number, direction: StudyDirection, shuffle: boolean) => startLearning(scopeKey, { pocketSize: size, direction, shuffle })}
+        onStart={(direction: StudyDirection, shuffle: boolean) => startLearning(scopeKey, { direction, shuffle })}
         advice={adviceLink}
       />
     );
@@ -244,18 +241,16 @@ export default function LearnMode() {
   if (phase === 'options') {
     return (
       <PocketSetup
-        recommendation={recommendation}
         totalCards={pool.length}
-        initialSize={progress.pocket_size}
         initialDirection={progress.direction}
         initialShuffle={seed !== null}
         planNote={
           planned
-            ? `Your study plan sets today's cards: ${todayTotal} for the test ${testIn}${todayTask ? ` (${todayTask.reviewCards + todayTask.doneReview} review, ${todayTask.newCards + todayTask.doneNew} new)` : ''}. Pockets just split them into short rounds with a check-in after each.`
-            : undefined
+            ? `Your study plan sets today's cards: ${todayTotal} for the test ${testIn}${todayTask ? ` (${todayTask.reviewCards + todayTask.doneReview} review, ${todayTask.newCards + todayTask.doneNew} new)` : ''}. They all come up in one go, then you're done for the day.`
+            : `Learn paces this set itself: every card that's due for review, plus ${dailyNewCards(pool.length)} new ones a day.`
         }
-        onStart={(size, direction, shuffle) => {
-          setLearnSettings(progress, { pocket_size: size, direction, shuffle_seed: shuffle ? seed ?? newShuffleSeed() : null });
+        onStart={(direction, shuffle) => {
+          setLearnSettings(progress, { direction, shuffle_seed: shuffle ? seed ?? newShuffleSeed() : null });
           setPhase('learning');
         }}
         editing={{
@@ -281,18 +276,18 @@ export default function LearnMode() {
         stats={pocketStats(shown, progress)}
         complete={point.complete}
         dueWaiting={due.length}
-        unlearned={planned ? newToday?.length ?? 0 : point.remaining}
+        unlearned={newToday.length}
         allLearned={planned ? neverSeen.length === 0 : point.remaining === 0}
         total={point.total}
         plan={
-          planned
+          planned || unlearned.length > 0
             ? {
-                doneToday: todayDone,
-                totalToday: todayTotal,
-                tomorrow: tomorrowTask ? tomorrowTask.newCards + tomorrowTask.reviewCards : null,
-                testIn,
+                doneToday: planned ? todayDone : todays.all.length,
+                totalToday: planned ? todayTotal : todays.all.length + due.length + newToday.length,
+                tomorrow: planned && tomorrowTask ? tomorrowTask.newCards + tomorrowTask.reviewCards : null,
+                testIn: planned ? testIn : null,
                 ahead,
-                unseen: neverSeen.length,
+                unseen: planned ? neverSeen.length : unlearned.length,
                 onLearnAhead: () => {
                   setAhead(true);
                   setPhase('learning');
@@ -300,14 +295,10 @@ export default function LearnMode() {
               }
             : undefined
         }
-        pocketSize={progress.pocket_size}
         nextReviewIn={next ? relativeTime(next, sem.now, sem.tz) : null}
         retried={retried.length}
         shuffled={seed !== null}
-        onNextPocket={(size) => {
-          if (size !== progress.pocket_size) setLearnSettings(progress, { pocket_size: size });
-          setPhase('learning');
-        }}
+        onNextPocket={() => setPhase('learning')}
         onFlashcards={() => openFlashcards(retried.length > 0 ? retried : todays.shaky, phase === 'summary' ? 'summary' : 'learning')}
         onRedo={(shuffle) => {
           // Everything's learned, so there's nothing to lose — no "are you sure?".

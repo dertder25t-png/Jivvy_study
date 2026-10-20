@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card, CardReview, LearnMark, LearnProgress } from '@/types/db';
 import {
-  checkAnswer, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
+  checkAnswer, copyTimeSeconds, dailyNewCards, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
 } from './learning';
 import { nextReview, stateFromReviews, type CardWithReviews } from './scheduling';
 import { mkCard, mkReview } from './testutil';
@@ -10,8 +10,8 @@ const T0 = '2026-09-23T12:00:00.000Z';
 const mark = (over: Partial<LearnMark> = {}): LearnMark => ({ grade: 'good', accuracy: 1, at: T0, ...over });
 const done = (...ids: string[]) => Object.fromEntries(ids.map((id) => [id, mark()]));
 const ids = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7'];
-type P = Pick<LearnProgress, 'done' | 'pocket' | 'pocket_size' | 'pocket_started_at'>;
-const progress = (over: Partial<P> = {}): P => ({ done: {}, pocket: [], pocket_size: 3, pocket_started_at: null, ...over });
+type P = Pick<LearnProgress, 'done' | 'pocket' | 'pocket_started_at'>;
+const progress = (over: Partial<P> = {}): P => ({ done: {}, pocket: [], pocket_started_at: null, ...over });
 
 describe('learnScopeKey', () => {
   it('names the same cards the same way, however the scope is written', () => {
@@ -58,9 +58,14 @@ describe('gradeToRating', () => {
 });
 
 describe('resumePoint', () => {
-  it('starts a new set at the first card', () => {
+  it('starts a new set with every card up today, in order', () => {
     const p = resumePoint(ids, progress());
-    expect(p).toMatchObject({ pocket: ['c1', 'c2', 'c3'], queue: ['c1', 'c2', 'c3'], isNew: true, learned: 0, remaining: 7, fresh: 3, reviews: 0 });
+    expect(p).toMatchObject({ pocket: ids, queue: ids, isNew: true, learned: 0, remaining: 7, fresh: 7, reviews: 0 });
+  });
+
+  it("limits new cards to today's share when it's given", () => {
+    const p = resumePoint(ids, progress(), [], undefined, undefined, ['c1', 'c2', 'c3']);
+    expect(p.pocket).toEqual(['c1', 'c2', 'c3']);
   });
 
   it('picks up partway through the pocket you left', () => {
@@ -70,13 +75,13 @@ describe('resumePoint', () => {
 
   it('moves on to the next unlearned cards once a pocket is done — never repeating the first ones', () => {
     const p = resumePoint(ids, progress({ done: done('c1', 'c2', 'c3'), pocket: ['c1', 'c2', 'c3'] }));
-    expect(p.pocket).toEqual(['c4', 'c5', 'c6']);
+    expect(p.pocket).toEqual(['c4', 'c5', 'c6', 'c7']);
     expect(p.isNew).toBe(true);
   });
 
   it('puts learned cards that are due for review first in the next pocket', () => {
     const p = resumePoint(ids, progress({ done: done('c1', 'c2', 'c3'), pocket: ['c1', 'c2', 'c3'] }), ['c2']);
-    expect(p).toMatchObject({ pocket: ['c2', 'c4', 'c5'], reviews: 1, fresh: 2 });
+    expect(p).toMatchObject({ pocket: ['c2', 'c4', 'c5', 'c6', 'c7'], reviews: 1, fresh: 4 });
   });
 
   it("counts a review card as finished only once it's been graded again in this pocket", () => {
@@ -89,14 +94,14 @@ describe('resumePoint', () => {
     expect(resumePoint(ids, regraded, [])).toMatchObject({ queue: ['c4'], reviews: 1 });
   });
 
-  it('uses a new pocket size from the next pocket, and skips cards that were deleted', () => {
-    const p = resumePoint(['c1', 'c2', 'c4', 'c5', 'c6'], progress({ done: done('c1', 'c2', 'c3'), pocket: ['c1', 'c2', 'c3'], pocket_size: 2 }));
-    expect(p.pocket).toEqual(['c4', 'c5']);
+  it('skips cards that were deleted', () => {
+    const p = resumePoint(['c1', 'c2', 'c4', 'c5', 'c6'], progress({ done: done('c1', 'c2', 'c3'), pocket: ['c1', 'c2', 'c3'] }));
+    expect(p.pocket).toEqual(['c4', 'c5', 'c6']);
     expect(p).toMatchObject({ learned: 2, remaining: 3, total: 5 });
   });
 
   it("is complete only when everything's learned and nothing is due", () => {
-    const all = progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2'], pocket_size: 5 });
+    const all = progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2'] });
     expect(resumePoint(['c1', 'c2'], all)).toMatchObject({ pocket: [], complete: true, remaining: 0 });
     expect(resumePoint(['c1', 'c2'], all, ['c2'])).toMatchObject({ pocket: ['c2'], complete: false, reviews: 1 });
   });
@@ -104,23 +109,23 @@ describe('resumePoint', () => {
   describe('with a study plan', () => {
     it("serves the day's reviews (studied anywhere) and only today's share of new cards", () => {
       // c1, c2 were studied in Review mode (not in Learn); c2 is due. The plan allows 2 new cards today.
-      const p = resumePoint(ids, progress({ pocket_size: 10 }), ['c2'], ['c3', 'c4']);
+      const p = resumePoint(ids, progress(), ['c2'], ['c3', 'c4']);
       expect(p).toMatchObject({ pocket: ['c2', 'c3', 'c4'], reviews: 1, fresh: 2, isNew: true });
     });
 
     it("is done for the day once today's reviews and new cards are through", () => {
-      const p = resumePoint(ids, progress({ done: done('c2', 'c3', 'c4'), pocket: ['c2', 'c3', 'c4'], pocket_size: 10 }), [], []);
+      const p = resumePoint(ids, progress({ done: done('c2', 'c3', 'c4'), pocket: ['c2', 'c3', 'c4'] }), [], []);
       expect(p).toMatchObject({ pocket: [], complete: true });
     });
 
     it('never serves a due review twice in one pocket', () => {
-      const p = resumePoint(ids, progress({ pocket_size: 10 }), ['c3'], ['c3', 'c4']);
+      const p = resumePoint(ids, progress(), ['c3'], ['c3', 'c4']);
       expect(p.pocket).toEqual(['c3', 'c4']);
     });
   });
 
   it('keeps going with cards added to the set after it was finished', () => {
-    const p = resumePoint(['c1', 'c2', 'new'], progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2'], pocket_size: 5 }));
+    const p = resumePoint(['c1', 'c2', 'new'], progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2'] }));
     expect(p).toMatchObject({ pocket: ['new'], complete: false, remaining: 1 });
   });
 });
@@ -228,25 +233,33 @@ describe('checkAnswer', () => {
 });
 
 describe('mixPocket', () => {
-  it('interleaves reviews and new cards, about 60/40', () => {
-    const r = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6', 'r7', 'r8'];
-    const n = ['n1', 'n2', 'n3', 'n4', 'n5', 'n6'];
-    const p = mixPocket(r, n, 10);
-    expect(p).toHaveLength(10);
-    expect(p.filter((x) => x.startsWith('r'))).toHaveLength(6);
-    expect(p.slice(0, 4)).toEqual(['r1', 'n1', 'r2', 'n2']);
+  it('serves every card, interleaving reviews and new cards in proportion', () => {
+    const r = ['r1', 'r2', 'r3', 'r4'];
+    const n = ['n1', 'n2'];
+    const p = mixPocket(r, n);
+    expect(p).toHaveLength(6);
+    expect([...p].sort()).toEqual([...r, ...n].sort());
+    expect(p.slice(0, 3)).toEqual(['r1', 'n1', 'r2']);
   });
 
-  it("lets a big backlog fill what new cards can't, and vice versa", () => {
-    expect(mixPocket(['r1', 'r2', 'r3', 'r4'], [], 3)).toEqual(['r1', 'r2', 'r3']);
-    expect(mixPocket([], ['n1', 'n2', 'n3'], 2)).toEqual(['n1', 'n2']);
-    expect(mixPocket(['r1'], ['n1', 'n2', 'n3'], 3)).toEqual(['r1', 'n1', 'n2']);
+  it('keeps all of a big backlog and all of the new cards, new ones spread through it', () => {
+    const backlog = Array.from({ length: 56 }, (_, i) => `r${i}`);
+    const fresh = Array.from({ length: 49 }, (_, i) => `n${i}`);
+    const p = mixPocket(backlog, fresh);
+    expect(p).toHaveLength(105);
+    expect(p.slice(0, 10).some((x) => x.startsWith('n'))).toBe(true);
   });
 
-  it('after missed days a backlog still leaves room for new cards', () => {
-    const backlog = Array.from({ length: 30 }, (_, i) => `r${i}`);
-    const p = mixPocket(backlog, ['n1', 'n2', 'n3', 'n4'], 10);
-    expect(p.filter((x) => x.startsWith('n'))).toHaveLength(4);
+  it('with only one kind, just that kind in order', () => {
+    expect(mixPocket(['r1', 'r2'], [])).toEqual(['r1', 'r2']);
+    expect(mixPocket([], ['n1', 'n2'])).toEqual(['n1', 'n2']);
+  });
+});
+
+describe('dailyNewCards', () => {
+  it('is at least 10 a day and spreads big sets over about ten days', () => {
+    expect(dailyNewCards(30)).toBe(10);
+    expect(dailyNewCards(300)).toBe(30);
   });
 });
 
@@ -255,7 +268,7 @@ describe('a pocket left from an earlier day', () => {
     const stale = progress({ done: done('c1'), pocket: ['c1', 'c2', 'c3'], pocket_started_at: '2026-09-20T10:00:00.000Z' });
     const p = resumePoint(ids, stale, [], undefined, new Date('2026-09-23T00:00:00Z'));
     expect(p.isNew).toBe(true);
-    expect(p.pocket).toEqual(['c2', 'c3', 'c4']);
+    expect(p.pocket).toEqual(['c2', 'c3', 'c4', 'c5', 'c6', 'c7']);
     // Same day: still resumed.
     expect(resumePoint(ids, stale, [], undefined, new Date('2026-09-19T00:00:00Z')).isNew).toBe(false);
   });
@@ -278,5 +291,13 @@ describe('due reviews after a Good today', () => {
     const lapsed = k('lapsed', [{ reviewed_at: '2026-09-20T10:00:00Z', rating: 1, due_at: '2026-09-20T10:10:00Z' }]);
     const broken = k('broken', [{ reviewed_at: '2026-09-20T10:00:00Z', rating: 3, due_at: 'garbage' }]);
     expect(dueForReview([late, lapsed, broken], null, endOfToday, startOfToday)).toEqual(['lapsed', 'broken', 'late']);
+  });
+});
+
+describe('copyTimeSeconds', () => {
+  it('gives short answers the 4s floor and long ones more, up to a cap', () => {
+    expect(copyTimeSeconds('cat', 'dog')).toBe(4);
+    expect(copyTimeSeconds('x'.repeat(200), 'term')).toBeGreaterThan(25);
+    expect(copyTimeSeconds('x'.repeat(5000))).toBe(60);
   });
 });

@@ -443,22 +443,24 @@ export function learnProgressFor(scopeKey: string): LearnProgress | undefined {
   return store.all('learn_progress').find((p) => p.scope_key === scopeKey);
 }
 
+/** The column predates sessions with no size limit: it's still required by the database, but no longer read. */
+const LEGACY_POCKET_SIZE = 10;
+
 /** First time learning these cards: remember how you want to study them. */
-export function startLearning(scopeKey: string, args: { pocketSize: number; direction: LearnDirection; shuffle: boolean }): LearnProgress {
+export function startLearning(scopeKey: string, args: { direction: LearnDirection; shuffle: boolean }): LearnProgress {
   // Defaults for the next set.
-  prefs.set({ learnPocketSize: args.pocketSize, learnDirection: args.direction, learnShuffle: args.shuffle });
+  prefs.set({ learnDirection: args.direction, learnShuffle: args.shuffle });
   const shuffle_seed = args.shuffle ? newShuffleSeed() : null;
   const existing = learnProgressFor(scopeKey);
-  if (existing) return setLearnSettings(existing, { pocket_size: args.pocketSize, direction: args.direction, shuffle_seed });
+  if (existing) return setLearnSettings(existing, { direction: args.direction, shuffle_seed });
   const now = nowIso();
   return store.insert('learn_progress', {
-    user_id: store.userId, scope_key: scopeKey, pocket_size: args.pocketSize, direction: args.direction,
+    user_id: store.userId, scope_key: scopeKey, pocket_size: LEGACY_POCKET_SIZE, direction: args.direction,
     done: {}, pocket: [], pocket_started_at: null, shuffle_seed, round: 1, started_at: now, updated_at: now,
   });
 }
 
-export function setLearnSettings(p: LearnProgress, patch: Partial<Pick<LearnProgress, 'pocket_size' | 'direction' | 'shuffle_seed'>>): LearnProgress {
-  if (patch.pocket_size) prefs.set({ learnPocketSize: patch.pocket_size });
+export function setLearnSettings(p: LearnProgress, patch: Partial<Pick<LearnProgress, 'direction' | 'shuffle_seed'>>): LearnProgress {
   if (patch.direction) prefs.set({ learnDirection: patch.direction });
   if (patch.shuffle_seed !== undefined) prefs.set({ learnShuffle: patch.shuffle_seed !== null });
   return store.update('learn_progress', p, { ...patch, updated_at: nowIso() });

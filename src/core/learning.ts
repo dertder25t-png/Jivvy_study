@@ -31,66 +31,12 @@ export function gradeToRating(grade: 'easy' | 'good' | 'struggling'): Rating {
   return grade === 'easy' ? 4 : grade === 'good' ? 3 : 1;
 }
 
-export interface PocketRecommendation {
-  recommended: number;
-  min: number;
-  max: number;
-  rationale: string;
-}
-
 /**
- * Recommend pocket size based on total cards and days remaining until exam.
- * Returns a recommended size (user can override), plus min/max constraints.
+ * New cards to learn per day for a set with no test date (a set with one gets its share from the study
+ * plan instead): the set spread over about ten days, never fewer than 10 a day.
  */
-export function calculateRecommendedPocketSize(
-  totalCards: number,
-  examDate: Date | null,
-  now: Date,
-): PocketRecommendation {
-  if (totalCards <= 0) {
-    return { recommended: 1, min: 1, max: 1, rationale: 'No cards available' };
-  }
-
-  if (!examDate) {
-    // No exam date: recommend 10-15 cards as a comfortable study pocket
-    const recommended = Math.min(12, Math.max(1, totalCards));
-    return {
-      recommended,
-      min: 1,
-      max: totalCards,
-      rationale: `Study ${recommended} cards at a time (no exam scheduled)`,
-    };
-  }
-
-  const msPerDay = 24 * 60 * 60 * 1000;
-  const daysRemaining = Math.ceil((examDate.getTime() - now.getTime()) / msPerDay);
-
-  if (daysRemaining <= 0) {
-    // Study today only
-    return {
-      recommended: Math.min(10, totalCards),
-      min: 1,
-      max: totalCards,
-      rationale: 'Study all remaining cards today before exam',
-    };
-  }
-
-  // Calculate cards per day based on time available
-  const baseCardsPerDay = totalCards / daysRemaining;
-  let recommended = Math.ceil(baseCardsPerDay);
-
-  // Cap within reasonable range (3-30 cards per pocket)
-  recommended = Math.max(3, Math.min(30, recommended));
-
-  // But don't recommend more than total cards
-  recommended = Math.min(recommended, totalCards);
-
-  return {
-    recommended,
-    min: 1,
-    max: totalCards,
-    rationale: `${recommended} cards/day over ${daysRemaining} days (${totalCards} to go)`,
-  };
+export function dailyNewCards(setSize: number): number {
+  return Math.max(10, Math.ceil(setSize / 10));
 }
 
 const STOPWORDS = new Set([
@@ -138,6 +84,15 @@ function sameWord(typed: string, actual: string): boolean {
   const len = Math.max(typed.length, actual.length);
   const allowed = len >= 9 ? 2 : len >= 5 ? 1 : 0;
   return allowed > 0 && editDistance(typed, actual) <= allowed;
+}
+
+/**
+ * How many seconds the answer stays up for copying before Learn hides it: a short floor, then more time the
+ * longer the answer (mostly) and the prompt are, so a long definition isn't gone before you can read it.
+ */
+export function copyTimeSeconds(answer: string, prompt = ''): number {
+  const secs = 4 + answer.trim().length * 0.12 + prompt.trim().length * 0.03;
+  return Math.min(60, Math.max(4, Math.round(secs)));
 }
 
 export type AnswerVerdict = 'right' | 'close' | 'wrong';
@@ -261,25 +216,19 @@ export function finishedInPocket(progress: Pick<LearnProgress, 'done' | 'pocket_
   return Date.parse(mark.at) >= (progress.pocket_started_at ? Date.parse(progress.pocket_started_at) : 0);
 }
 
-/** Share of a pocket given to reviews when there are both reviews and new cards waiting. */
-const REVIEW_SHARE = 0.6;
-
 /**
- * A pocket from the cards due for review and the new ones: about 60% reviews and 40% new when both are
- * waiting (either fills what the other can't), then interleaved review, new, review, new… so neither a
- * pile of overdue reviews nor a run of new cards wears you out — and a backlog after missed days can't
- * push new cards out for good.
+ * A pocket (a day's session) from every card due for review and every new card that's up today, interleaved
+ * review, new, review, new… in proportion — so neither a pile of overdue reviews nor a run of new cards
+ * wears you out, and a backlog after missed days can't push new cards out. Nothing is cut: how many cards
+ * a day needs is worked out before this (the study plan, or `dailyNewCards`), not by a size you pick.
  */
-export function mixPocket(reviews: readonly string[], fresh: readonly string[], size: number): string[] {
-  let r = Math.min(reviews.length, Math.ceil(size * REVIEW_SHARE));
-  const n = Math.min(fresh.length, size - r);
-  r = Math.min(reviews.length, size - n);
-  const rs = reviews.slice(0, r);
-  const ns = fresh.slice(0, n);
+export function mixPocket(reviews: readonly string[], fresh: readonly string[]): string[] {
   const out: string[] = [];
-  for (let i = 0; i < Math.max(rs.length, ns.length); i++) {
-    if (i < rs.length) out.push(rs[i]);
-    if (i < ns.length) out.push(ns[i]);
+  let r = 0;
+  let n = 0;
+  while (r < reviews.length || n < fresh.length) {
+    const takeNew = r >= reviews.length || (n < fresh.length && n * reviews.length < r * fresh.length);
+    out.push(takeNew ? fresh[n++] : reviews[r++]);
   }
   return out;
 }
@@ -287,11 +236,11 @@ export function mixPocket(reviews: readonly string[], fresh: readonly string[], 
 /**
  * Where to pick up: the pocket you were partway through (minus any cards deleted since), or else a new
  * one — first the learned cards that are due for review (`due`, most overdue first), so nothing learned
- * early slips away before the test, then the next cards you haven't learned yet, up to `pocket_size`.
+ * early slips away before the test, then the new cards that are up today.
  */
 export function resumePoint(
   orderedIds: string[],
-  progress: Pick<LearnProgress, 'done' | 'pocket' | 'pocket_size' | 'pocket_started_at'>,
+  progress: Pick<LearnProgress, 'done' | 'pocket' | 'pocket_started_at'>,
   due: readonly string[] = [],
   /**
    * With a study plan (a test date): exactly which new cards may go into a pocket today, in order, and
@@ -301,6 +250,8 @@ export function resumePoint(
   planned?: readonly string[],
   /** Start of the user's day: a pocket begun before it is stale (missed days) and is rebuilt, not resumed. */
   startOfToday?: Date,
+  /** Without a plan: the new cards to learn today (default: every card not learned yet this round). */
+  newToday?: readonly string[],
 ): ResumePoint {
   const inSet = new Set(orderedIds);
   const learnedIds = orderedIds.filter((id) => progress.done[id]);
@@ -316,8 +267,8 @@ export function resumePoint(
     pocket = saved;
     queue = saved.filter((id) => !finishedInPocket(progress, id));
   } else {
-    const fresh = planned ? planned.filter((id) => inSet.has(id) && !dueSet.has(id)) : orderedIds.filter((id) => !progress.done[id]);
-    pocket = mixPocket(dueNow, fresh, Math.max(1, progress.pocket_size));
+    const fresh = planned ? planned.filter((id) => inSet.has(id) && !dueSet.has(id)) : (newToday ?? orderedIds).filter((id) => inSet.has(id) && !progress.done[id]);
+    pocket = mixPocket(dueNow, fresh);
     queue = pocket;
   }
   // A review = a card studied before this pocket: still waiting in it, or finished in it as a review.

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -45,6 +45,18 @@ function Row({
   // Long lines wrap onto more rows instead of scrolling sideways out of sight; the web textarea
   // doesn't grow by itself, so track its content height.
   const [inputHeight, setInputHeight] = useState<number | undefined>(undefined);
+  const inputRef = useRef<TextInput | null>(null);
+  // scrollHeight never reports less than the box's current height, so a locked-in height only ever grows
+  // (that's the big gaps between lines). Collapse the box first so it measures just its own text.
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const el = inputRef.current as unknown as HTMLTextAreaElement | null;
+    if (!el?.style) return;
+    el.style.height = '0px';
+    const h = el.scrollHeight;
+    el.style.height = `${h}px`;
+    setInputHeight(h);
+  }, [node.text]);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-start', minHeight: 32 }}>
       {Array.from({ length: depth }).map((_, level) => (
@@ -63,7 +75,7 @@ function Row({
         <Text style={{ color: c.muted, fontSize: BODY_SIZE }}>{bulletGlyph(depth, node.checked)}</Text>
       </Pressable>
       <TextInput
-        ref={(r) => registerRef(node.id, r)}
+        ref={(r) => { inputRef.current = r; registerRef(node.id, r); }}
         value={node.text}
         onChangeText={onChangeText}
         onFocus={onFocus}
@@ -73,7 +85,7 @@ function Row({
         submitBehavior="submit"
         onSubmitEditing={onSubmit}
         blurOnSubmit={false}
-        onContentSizeChange={(e) => setInputHeight(Math.ceil(e.nativeEvent.contentSize.height))}
+        onContentSizeChange={Platform.OS === 'web' ? undefined : (e) => setInputHeight(Math.ceil(e.nativeEvent.contentSize.height))}
         onKeyPress={(e: any) => {
           if (e.nativeEvent.key === 'Tab') e.preventDefault?.();
           if (Platform.OS === 'web' && e.nativeEvent.key === 'Enter' && !e.shiftKey) {

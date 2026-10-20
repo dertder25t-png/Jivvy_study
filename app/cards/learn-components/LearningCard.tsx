@@ -6,7 +6,7 @@ import { radius, space, useColors } from '@/ui/theme';
 import { reviewCard } from '@/data/actions';
 import type { Card as CardType } from '@/types/db';
 import type { StudyDirection } from '@/core/learning';
-import { checkAnswer, directionForCard, gradeToRating, type AnswerCheck } from '@/core/learning';
+import { checkAnswer, copyTimeSeconds, directionForCard, gradeToRating, type AnswerCheck } from '@/core/learning';
 import { stripPartLabel } from '@/core/flashcards/cardCheck';
 
 type Phase = 'visible' | 'hidden';
@@ -60,7 +60,12 @@ export default function LearningCard({
   const [showReveal, setShowReveal] = useState(false);
   /** Peeked at the answer before checking. */
   const [hinted, setHinted] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(4);
+  const [timeRemaining, setTimeRemaining] = useState(() => {
+    const first = cardMap.get(queue[0]);
+    if (!first) return 4;
+    const d = directionForCard(direction, first.id);
+    return d === 'term_to_def' ? copyTimeSeconds(first.definition, first.term) : copyTimeSeconds(first.term, first.definition);
+  });
   const [round, setRound] = useState(0); // bumps per card shown, so a card that comes straight back restarts
   const hiddenInputRef = useRef<TextInput>(null);
 
@@ -92,6 +97,14 @@ export default function LearningCard({
     return () => clearTimeout(t);
   }, [phase, round, result]);
 
+  const copyTimeFor = (id: string | undefined): number => {
+    const next = id ? cardMap.get(id) : undefined;
+    if (!next) return 4;
+    return directionForCard(direction, next.id) === 'term_to_def'
+      ? copyTimeSeconds(next.definition, next.term)
+      : copyTimeSeconds(next.term, next.definition);
+  };
+
   const nextCard = (nextId: string | undefined, missed: Record<string, number>) => {
     setPhase(startPhase(nextId, missed));
     setVisibleText('');
@@ -99,7 +112,7 @@ export default function LearningCard({
     setShowReveal(false);
     setHinted(false);
     setResult(null);
-    setTimeRemaining(4);
+    setTimeRemaining(copyTimeFor(nextId));
     setRound((r) => r + 1);
   };
 
@@ -227,7 +240,7 @@ export default function LearningCard({
       <View style={{ gap: space.lg, paddingTop: isPhone ? space.xl : space.xxl * 1.5 }}>
         <View style={{ gap: 6 }}>
           <Row style={{ justifyContent: 'space-between' }}>
-            <T variant="small" muted>{doneCount} of {pocket.length} done in this pocket</T>
+            <T variant="small" muted>{doneCount} of {pocket.length} done in this session</T>
             {phase === 'visible' ? <T variant="small" muted>Hides in {timeRemaining}s</T> : null}
           </Row>
           <ProgressBar value={doneCount / Math.max(1, pocket.length)} />

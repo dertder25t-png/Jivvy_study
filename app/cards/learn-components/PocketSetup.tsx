@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
-import { useColors } from '@/ui/theme';
-import type { PocketRecommendation, StudyDirection } from '@/core/learning';
+import type { StudyDirection } from '@/core/learning';
 
 const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = [
   { key: 'term_to_def', label: 'Answer with the definition', hint: "You're shown the term and type its definition." },
@@ -11,12 +10,10 @@ const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = 
 ];
 
 interface PocketSetupProps {
-  recommendation: PocketRecommendation;
   totalCards: number;
-  initialSize: number;
   initialDirection: StudyDirection;
   initialShuffle: boolean;
-  onStart: (size: number, direction: StudyDirection, shuffle: boolean) => void;
+  onStart: (direction: StudyDirection, shuffle: boolean) => void;
   /** Present when changing settings mid-set (rather than the first time): progress so far + ways out. */
   editing?: {
     learned: number;
@@ -26,28 +23,24 @@ interface PocketSetupProps {
   };
   /** Card check found things to fix in this set. */
   advice?: { count: number; onOpen: () => void };
-  /** With a study plan, the plan sets how many cards a day — said here instead of a cards-per-day suggestion. */
+  /** With a study plan, says what today's cards are (the plan sets them). */
   planNote?: string;
 }
 
 /** Asked once per set. After that Learn goes straight to your cards; this only comes back from "Options". */
 export default function PocketSetup({
-  recommendation, totalCards, initialSize, initialDirection, initialShuffle, onStart, editing, advice, planNote,
+  totalCards, initialDirection, initialShuffle, onStart, editing, advice, planNote,
 }: PocketSetupProps) {
-  const [selected, setSelected] = useState(Math.max(1, Math.min(initialSize, totalCards)));
   const [direction, setDirection] = useState<StudyDirection>(initialDirection);
   const [shuffle, setShuffle] = useState(initialShuffle);
-  const c = useColors();
-
-  const presets = [...new Set([3, 5, 10, 15, 20, 30, 50, selected])].filter((n) => n <= totalCards).sort((a, b) => a - b);
 
   return (
     <Screen maxWidth={760}
       footer={
         <View style={{ gap: 8 }}>
           <Button
-            title={editing ? 'Save and keep going' : `Study ${selected} cards at a time`}
-            onPress={() => onStart(selected, direction, shuffle)}
+            title={editing ? 'Save and keep going' : 'Start learning'}
+            onPress={() => onStart(direction, shuffle)}
             variant="primary"
           />
           {editing ? <Button title="Cancel" variant="ghost" onPress={editing.onCancel} /> : null}
@@ -58,8 +51,8 @@ export default function PocketSetup({
         <Section title={editing ? 'Learn settings' : 'Learn Mode'}>
           <T>
             {editing
-              ? `You've learned ${editing.learned} of ${totalCards} cards in this set, and that progress stays. A new pocket size starts with your next pocket.`
-              : "Type each answer twice: first while you can see it, then from memory. You'll only set this up once — next time Learn picks up right where you left off."}
+              ? `You've learned ${editing.learned} of ${totalCards} cards in this set, and that progress stays. New settings apply to your next card.`
+              : "Type each answer twice: first while you can see it, then from memory. Learn works out how many cards you need each day, and next time it picks up right where you left off."}
           </T>
         </Section>
 
@@ -74,45 +67,11 @@ export default function PocketSetup({
           </Card>
         ) : null}
 
-        <Card>
-          <View style={{ gap: 12 }}>
-            <View>
-              <T variant="heading" style={{ marginBottom: 8 }}>
-                Cards per pocket: {selected}
-              </T>
-              <T variant="small" muted>
-                {planNote ?? recommendation.rationale}
-              </T>
-            </View>
-
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {presets.map((size) => (
-                <Pressable
-                  key={size}
-                  onPress={() => setSelected(size)}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 6,
-                    backgroundColor: selected === size ? c.primary : c.surface,
-                    borderColor: selected === size ? c.primary : c.border,
-                    borderWidth: 1,
-                  }}
-                >
-                  <T
-                    style={{
-                      color: selected === size ? c.onPrimary : c.text,
-                      fontWeight: '500',
-                      fontSize: 14,
-                    }}
-                  >
-                    {size}
-                  </T>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </Card>
+        {planNote ? (
+          <Card>
+            <T variant="small" muted>{planNote}</T>
+          </Card>
+        ) : null}
 
         <Card>
           <View style={{ gap: 8 }}>

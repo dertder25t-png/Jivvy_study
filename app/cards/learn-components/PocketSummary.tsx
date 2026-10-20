@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
 import { useColors } from '@/ui/theme';
 import type { PocketStats } from '@/core/learning';
@@ -19,21 +19,21 @@ interface PocketSummaryProps {
     doneToday: number;
     totalToday: number;
     tomorrow: number | null;
-    testIn: string;
+    /** The test, as a phrase ("in 3 days"); null for a set with no test date. */
+    testIn: string | null;
     /** Already learning ahead of the plan. */
     ahead: boolean;
     /** Cards not studied yet at all. */
     unseen: number;
     onLearnAhead: () => void;
   };
-  pocketSize: number;
   /** "tomorrow", "in 3 days" — when the next review comes due, once everything's done. */
   nextReviewIn: string | null;
   /** Cards in this pocket that needed another go. */
   retried: number;
   /** The set is gone through in shuffled order. */
   shuffled: boolean;
-  onNextPocket: (size: number) => void;
+  onNextPocket: () => void;
   onFlashcards: () => void;
   /** Go through the whole set again from the start (optionally shuffled). */
   onRedo: (shuffle: boolean) => void;
@@ -44,36 +44,32 @@ interface PocketSummaryProps {
 const cards = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
 
 export default function PocketSummary({
-  stats, complete, dueWaiting, unlearned, allLearned, total, plan, pocketSize, nextReviewIn, retried, shuffled,
+  stats, complete, dueWaiting, unlearned, allLearned, total, plan, nextReviewIn, retried, shuffled,
   onNextPocket, onFlashcards, onRedo, onReview, onEndSession,
 }: PocketSummaryProps) {
   const c = useColors();
-  const [nextSize, setNextSize] = useState(pocketSize);
   const [redoShuffled, setRedoShuffled] = useState(shuffled);
-  const left = dueWaiting + unlearned;
 
-  // The next pocket: reviews that are due come first, then new cards.
-  const nextReviews = Math.min(nextSize, dueWaiting);
-  const nextNew = Math.min(nextSize - nextReviews, unlearned);
-  const nextLabel = [nextReviews ? `${nextReviews} review${nextReviews === 1 ? '' : 's'}` : '', nextNew ? `${nextNew} new` : '']
+  const nextLabel = [dueWaiting ? `${dueWaiting} review${dueWaiting === 1 ? '' : 's'}` : '', unlearned ? `${unlearned} new` : '']
     .filter(Boolean).join(' + ');
-  const presets = [...new Set([5, 10, 15, 20, pocketSize])].filter((n) => n > 0 && n <= Math.max(left, pocketSize)).sort((a, b) => a - b);
   const doneForToday = Boolean(plan && complete);
 
-  let title = complete ? 'All caught up! 🎉' : 'Pocket Complete! 🎉';
+  let title = complete ? 'All caught up! 🎉' : 'Nice work! 🎉';
   let body = complete
     ? `You've learned all ${total} cards and nothing's due for review right now.${nextReviewIn ? ` Next review ${nextReviewIn} — cards come back in Learn on their own, spaced out so they stick.` : ''}`
     : `Great work! ${total - unlearned} of ${total} cards learned — your place is saved, so you can stop any time.`;
   if (plan && doneForToday) {
     title = 'Done for today! 🎉';
     body = plan.ahead && plan.unseen === 0 && dueWaiting === 0
-      ? `You've been through every card. Your test is ${plan.testIn} — reviews come back in Learn as they fall due.`
+      ? `You've been through every card.${plan.testIn ? ` Your test is ${plan.testIn} —` : ''} Reviews come back in Learn as they fall due.`
       : `That's today's plan done${plan.totalToday ? ` — ${plan.totalToday} card${plan.totalToday === 1 ? '' : 's'}` : ''}. ${
-          plan.tomorrow ? `About ${plan.tomorrow} tomorrow` : 'Nothing more is planned before the test'
-        }, and the test is ${plan.testIn}.`;
+          plan.testIn
+            ? `${plan.tomorrow ? `About ${plan.tomorrow} tomorrow` : 'Nothing more is planned before the test'}, and the test is ${plan.testIn}.`
+            : 'The rest of the set, and the reviews that fall due, come back tomorrow.'
+        }`;
   } else if (plan) {
     body = plan.ahead
-      ? `Learning ahead of your plan — your place is saved, so you can stop any time. The test is ${plan.testIn}.`
+      ? `Learning ahead of your plan — your place is saved, so you can stop any time.${plan.testIn ? ` The test is ${plan.testIn}.` : ''}`
       : `${Math.min(plan.doneToday, plan.totalToday)} of ${plan.totalToday} of today's plan done — your place is saved, so you can stop any time.`;
   }
 
@@ -200,36 +196,10 @@ export default function PocketSummary({
                   {plan
                     ? `${dueWaiting > 0 ? `${cards(dueWaiting)} due for review, ` : ''}${unlearned} new ${plan.ahead ? 'left to learn' : 'left today'}. `
                     : dueWaiting > 0 ? `${cards(dueWaiting)} due for review, ${unlearned} not learned yet. ` : `${unlearned} not learned yet. `}
-                  Next pocket: {nextLabel || cards(0)}
+                  Next up: {nextLabel || cards(0)}
                 </T>
               </View>
 
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {presets.map((size) => (
-                  <Pressable
-                    key={size}
-                    onPress={() => setNextSize(size)}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 6,
-                      backgroundColor: nextSize === size ? c.primary : c.surface,
-                      borderColor: nextSize === size ? c.primary : c.border,
-                      borderWidth: 1,
-                    }}
-                  >
-                    <T
-                      style={{
-                        color: nextSize === size ? c.onPrimary : c.text,
-                        fontWeight: '500',
-                        fontSize: 14,
-                      }}
-                    >
-                      {size}
-                    </T>
-                  </Pressable>
-                ))}
-              </View>
             </View>
           </Card>
         )}
@@ -242,7 +212,7 @@ export default function PocketSummary({
             </>
           ) : (
             <>
-              <Button title={`Continue · ${nextLabel || 'next pocket'}`} onPress={() => onNextPocket(nextSize)} variant="primary" />
+              <Button title={`Continue · ${nextLabel || 'keep going'}`} onPress={onNextPocket} variant="primary" />
               <Button title="Stop here for now" onPress={onEndSession} variant="secondary" />
             </>
           )}
