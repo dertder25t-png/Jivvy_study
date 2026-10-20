@@ -69,8 +69,13 @@ describe('resumePoint', () => {
   });
 
   it('picks up partway through the pocket you left', () => {
-    const p = resumePoint(ids, progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2', 'c3'] }));
-    expect(p).toMatchObject({ pocket: ['c1', 'c2', 'c3'], queue: ['c3'], isNew: false, learned: 2 });
+    const p = resumePoint(ids, progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2', 'c3'] }), [], undefined, undefined, ['c3']);
+    expect(p).toMatchObject({ pocket: ['c1', 'c2', 'c3'], queue: ['c3'], isNew: false, grown: false, learned: 2 });
+  });
+
+  it("adds the rest of today's share to a smaller pocket picked earlier, keeping your place in it", () => {
+    const p = resumePoint(ids, progress({ done: done('c1', 'c2'), pocket: ['c1', 'c2', 'c3'] }), [], undefined, undefined, ['c3', 'c4', 'c5']);
+    expect(p).toMatchObject({ pocket: ['c1', 'c2', 'c3', 'c4', 'c5'], queue: ['c3', 'c4', 'c5'], isNew: false, grown: true });
   });
 
   it('moves on to the next unlearned cards once a pocket is done — never repeating the first ones', () => {
@@ -88,10 +93,10 @@ describe('resumePoint', () => {
     const earlier = { ...done('c1'), c1: mark({ at: '2026-09-20T10:00:00.000Z' }) };
     const pocket = progress({ done: earlier, pocket: ['c1', 'c4'], pocket_started_at: T0 });
     expect(finishedInPocket(pocket, 'c1')).toBe(false);
-    expect(resumePoint(ids, pocket, ['c1'])).toMatchObject({ queue: ['c1', 'c4'], reviews: 1, isNew: false });
+    expect(resumePoint(ids, pocket, ['c1'], undefined, undefined, ['c4'])).toMatchObject({ queue: ['c1', 'c4'], reviews: 1, isNew: false });
 
     const regraded = { ...pocket, done: { ...earlier, c1: mark({ at: '2026-09-23T12:05:00.000Z', review: true }) } };
-    expect(resumePoint(ids, regraded, [])).toMatchObject({ queue: ['c4'], reviews: 1 });
+    expect(resumePoint(ids, regraded, [], undefined, undefined, ['c4'])).toMatchObject({ queue: ['c4'], reviews: 1 });
   });
 
   it('skips cards that were deleted', () => {
@@ -295,9 +300,9 @@ describe('due reviews after a Good today', () => {
 });
 
 describe('copyTimeSeconds', () => {
-  it('gives short answers the 4s floor and long ones more, up to a cap', () => {
-    expect(copyTimeSeconds('cat', 'dog')).toBe(4);
-    expect(copyTimeSeconds('x'.repeat(200), 'term')).toBeGreaterThan(25);
-    expect(copyTimeSeconds('x'.repeat(5000))).toBe(60);
+  it('gives short answers a few seconds and long ones time to type them, up to a cap', () => {
+    expect(copyTimeSeconds('cat', 'dog')).toBeLessThanOrEqual(7);
+    expect(copyTimeSeconds('x'.repeat(200), 'term')).toBeGreaterThanOrEqual(60);
+    expect(copyTimeSeconds('x'.repeat(5000))).toBe(120);
   });
 });

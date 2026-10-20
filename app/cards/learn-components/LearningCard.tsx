@@ -79,16 +79,22 @@ export default function LearningCard({
   const missedBefore = (misses[currentCardId] ?? 0) > 0;
   const isReview = reviewIds.has(currentCardId);
 
-  // The answer stays up for a few seconds while you copy it, then hides.
+  // The answer stays up while you copy it (longer for longer answers), then hides. The countdown holds
+  // while you're typing, so it never vanishes mid-copy.
+  const lastTypedAt = useRef(0);
+  const [held, setHeld] = useState(0);
   useEffect(() => {
     if (phase !== 'visible' || !currentCard) return;
     if (timeRemaining <= 0) {
       setPhase('hidden');
       return;
     }
-    const t = setTimeout(() => setTimeRemaining((n) => n - 1), 1000);
+    const t = setTimeout(() => {
+      if (Date.now() - lastTypedAt.current < 1500) setHeld((h) => h + 1);
+      else setTimeRemaining((n) => n - 1);
+    }, 1000);
     return () => clearTimeout(t);
-  }, [phase, currentCard, round, timeRemaining]);
+  }, [phase, currentCard, round, timeRemaining, held]);
 
   // Once it's time to recall, put the cursor in the box.
   useEffect(() => {
@@ -190,7 +196,10 @@ export default function LearningCard({
       editable={!hidden || !result}
       value={hidden ? hiddenText : visibleText}
       onChangeText={(t) => {
-        if (!hidden) return setVisibleText(t);
+        if (!hidden) {
+          lastTypedAt.current = Date.now();
+          return setVisibleText(t);
+        }
         // Phones have no Shift+Enter: a new line at the end means "check".
         if (Platform.OS !== 'web' && t.endsWith('\n') && t.trim().length > 0) return handleCheck(t.trimEnd());
         setHiddenText(t);

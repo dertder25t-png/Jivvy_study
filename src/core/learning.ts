@@ -87,12 +87,13 @@ function sameWord(typed: string, actual: string): boolean {
 }
 
 /**
- * How many seconds the answer stays up for copying before Learn hides it: a short floor, then more time the
- * longer the answer (mostly) and the prompt are, so a long definition isn't gone before you can read it.
+ * How many seconds the answer stays up for copying before Learn hides it: time to read the card, then
+ * about three characters a second of typing for the answer, so a long definition isn't gone before
+ * you can copy it. (While you're typing the countdown also holds — see LearningCard.)
  */
 export function copyTimeSeconds(answer: string, prompt = ''): number {
-  const secs = 4 + answer.trim().length * 0.12 + prompt.trim().length * 0.03;
-  return Math.min(60, Math.max(4, Math.round(secs)));
+  const secs = 5 + answer.trim().length * 0.3 + prompt.trim().length * 0.05;
+  return Math.min(120, Math.max(5, Math.round(secs)));
 }
 
 export type AnswerVerdict = 'right' | 'close' | 'wrong';
@@ -198,6 +199,8 @@ export interface ResumePoint {
   queue: string[];
   /** True when this pocket was just picked and hasn't been saved yet. */
   isNew: boolean;
+  /** A pocket being resumed got cards added to it (to be saved, keeping its start time). */
+  grown: boolean;
   /** Of the pocket: spaced reviews of cards already learned, and brand-new cards. */
   reviews: number;
   fresh: number;
@@ -263,11 +266,17 @@ export function resumePoint(
 
   let pocket: string[];
   let queue: string[];
+  const fresh = planned ? planned.filter((id) => inSet.has(id) && !dueSet.has(id)) : (newToday ?? orderedIds).filter((id) => inSet.has(id) && !progress.done[id]);
+  let grown = false;
   if (resuming) {
-    pocket = saved;
-    queue = saved.filter((id) => !finishedInPocket(progress, id));
+    // Anything up today that the saved pocket doesn't have yet (it was picked smaller, or more came due
+    // since) joins the end of it, so the day's whole share gets served without starting over.
+    const inSaved = new Set(saved);
+    const extra = mixPocket(dueNow.filter((id) => !inSaved.has(id)), fresh.filter((id) => !inSaved.has(id)));
+    grown = extra.length > 0;
+    pocket = [...saved, ...extra];
+    queue = [...saved.filter((id) => !finishedInPocket(progress, id)), ...extra];
   } else {
-    const fresh = planned ? planned.filter((id) => inSet.has(id) && !dueSet.has(id)) : (newToday ?? orderedIds).filter((id) => inSet.has(id) && !progress.done[id]);
     pocket = mixPocket(dueNow, fresh);
     queue = pocket;
   }
@@ -281,6 +290,7 @@ export function resumePoint(
     pocket,
     queue,
     isNew: !resuming && pocket.length > 0,
+    grown,
     reviews,
     fresh: pocket.length - reviews,
     learned: learnedIds.length,

@@ -8,7 +8,7 @@ import {
 } from '@/core/learning';
 import { PREP_HORIZON_DAYS } from '@/core/testPrep';
 import { addDaysYmd, dateStringDayDiff, localDateString, relativeTime, zonedToUtc } from '@/core/time';
-import { markLearned, restartLearning, reviewCard, setLearnPocket, setLearnSettings, startLearning } from '@/data/actions';
+import { extendLearnPocket, markLearned, restartLearning, reviewCard, setLearnPocket, setLearnSettings, startLearning } from '@/data/actions';
 import { useCardAdvice } from '@/data/cardAdvice';
 import { useSemester } from '@/data/derived';
 import { prefs } from '@/data/prefs';
@@ -138,6 +138,12 @@ export default function LearnMode() {
     if (phase !== 'learning' || !progress || !point?.isNew) return;
     setLearnPocket(progress, point.pocket);
   }, [phase, progress, pocketKey, point?.isNew]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Today's pocket picked up more of the day's share: save it, so every device serves the same cards.
+  useEffect(() => {
+    if (phase !== 'learning' || !progress || !point?.grown) return;
+    extendLearnPocket(progress, point.pocket);
+  }, [phase, progress, pocketKey, point?.grown]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // With a study plan there's nothing to ask: start with the settings you used last (changeable in Options).
   useEffect(() => {

@@ -472,6 +472,11 @@ export function setLearnPocket(p: LearnProgress, pocket: string[]): LearnProgres
   return store.update('learn_progress', p, { pocket, pocket_started_at: now, updated_at: now });
 }
 
+/** Adds cards to the end of the pocket being studied, keeping its start time (so finished cards stay finished). */
+export function extendLearnPocket(p: LearnProgress, pocket: string[]): LearnProgress {
+  return store.update('learn_progress', p, { pocket, updated_at: nowIso() });
+}
+
 /** One card finished in the pocket. Merged onto the latest copy, so marks from another device aren't lost. */
 export function markLearned(scopeKey: string, cardId: string, mark: LearnMark) {
   const p = learnProgressFor(scopeKey);
