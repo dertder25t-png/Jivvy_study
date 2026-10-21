@@ -4,7 +4,7 @@ import { Button, Card, ProgressBar, Row, Screen, Section, T } from '@/ui/compone
 import { useLayout } from '@/ui/layout';
 import { radius, space, useColors } from '@/ui/theme';
 import type { Card as CardType } from '@/types/db';
-import { directionForCard, type StudyDirection } from '@/core/learning';
+import { directionForCard, requeueMissed, type StudyDirection } from '@/core/learning';
 
 interface FlashcardDrillProps {
   ids: string[];
@@ -20,7 +20,7 @@ interface FlashcardDrillProps {
 
 /**
  * Flip-card practice inside Learn mode. Flip, then "Got it" or "Still learning": the ones you're still
- * learning go to the back and come round again until every card is a "Got it".
+ * learning come round again a few cards later until every card is a "Got it".
  * Keys on the web: Space flips, 1 = still learning, 2 = got it.
  */
 function shuffled<T>(list: T[]): T[] {
@@ -61,7 +61,7 @@ export default function FlashcardDrill({ ids, cards, direction, shuffle = false,
         onMiss(card.id);
         setMissed((m) => new Set(m).add(card.id));
       }
-      setQueue((q) => [...q.slice(1), q[0]]);
+      setQueue((q) => requeueMissed(q));
     }
     setFlipped(false);
   };

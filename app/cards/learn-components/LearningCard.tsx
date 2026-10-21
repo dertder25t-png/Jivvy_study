@@ -6,7 +6,7 @@ import { radius, space, useColors } from '@/ui/theme';
 import { reviewCard } from '@/data/actions';
 import type { Card as CardType } from '@/types/db';
 import type { StudyDirection } from '@/core/learning';
-import { checkAnswer, copyTimeSeconds, directionForCard, gradeToRating, type AnswerCheck } from '@/core/learning';
+import { checkAnswer, copyTimeSeconds, directionForCard, requeueMissed, gradeToRating, type AnswerCheck } from '@/core/learning';
 import { stripPartLabel } from '@/core/flashcards/cardCheck';
 import { prefs } from '@/data/prefs';
 
@@ -136,9 +136,9 @@ export default function LearningCard({
     if (!currentCard) return;
     reviewCard(currentCard, gradeToRating(grade));
     if (grade === 'struggling') {
-      // Back of the line: it comes round again after the others (or right away if it's the last one).
+      // It comes round again a few cards later (or right away if it's the last one), so it stays fresh.
       const missed = { ...misses, [currentCardId]: (misses[currentCardId] ?? 0) + 1 };
-      const nextQueue = [...queue.slice(1), queue[0]];
+      const nextQueue = requeueMissed(queue);
       setMisses(missed);
       setQueue(nextQueue);
       nextCard(nextQueue[0], missed);

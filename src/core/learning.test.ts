@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card, CardReview, LearnMark, LearnProgress } from '@/types/db';
 import {
-  checkAnswer, copyTimeSeconds, dailyNewCards, troubleCards, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
+  checkAnswer, copyTimeSeconds, dailyNewCards, requeueMissed, troubleCards, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
 } from './learning';
 import { nextReview, stateFromReviews, type CardWithReviews } from './scheduling';
 import { mkCard, mkReview } from './testutil';
@@ -335,5 +335,19 @@ describe('troubleCards', () => {
 
   it('a miss after being cleared puts it back', () => {
     expect(troubleCards([k('c', [1, 3, 3, 1])]).map((t) => t.id)).toEqual(['c']);
+  });
+});
+
+describe('requeueMissed', () => {
+  it('brings a missed card back after a few others, not at the end of a big deck', () => {
+    const deck = Array.from({ length: 60 }, (_, i) => `c${i}`);
+    const q = requeueMissed(deck);
+    expect(q.indexOf('c0')).toBe(3);
+    expect(q).toHaveLength(60);
+  });
+
+  it('goes to the end when only a few cards are left', () => {
+    expect(requeueMissed(['a', 'b'])).toEqual(['b', 'a']);
+    expect(requeueMissed(['a'])).toEqual(['a']);
   });
 });

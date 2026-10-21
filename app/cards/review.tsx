@@ -11,6 +11,7 @@ import { Button, Card, Empty, ProgressBar, Row, Screen, T } from '@/ui/component
 import { useColors } from '@/ui/theme';
 import type { Rating } from '@/types/db';
 import { useSafeBack } from '@/ui/nav';
+import { requeueMissed } from '@/core/learning';
 
 const RATINGS: Array<{ r: Rating; label: string }> = [
   { r: 1, label: 'Again' }, { r: 2, label: 'Hard' }, { r: 3, label: 'Good' }, { r: 4, label: 'Easy' },
@@ -53,10 +54,10 @@ export default function ReviewSession() {
   const startedAt = useRef(Date.now());
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
-  const [again, setAgain] = useState<string[]>([]);
+  /** The session: the cards it started with, plus misses dealt back in a few cards later. */
+  const [queue, setQueue] = useState<string[]>(initial);
   const [tally, setTally] = useState<Record<Rating, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
 
-  const queue = [...initial, ...again];
   const cardId = queue[index];
   const item = sem.cards.find((k) => k.card.id === cardId);
 
@@ -103,7 +104,8 @@ export default function ReviewSession() {
 
   const rate = (r: Rating) => {
     if (!practice) reviewCard(card, r);
-    if (r === 1) setAgain((a) => [...a, card.id]);
+    // A miss comes back a few cards later, not after the whole rest of the session.
+    if (r === 1) setQueue((q) => [...q.slice(0, index + 1), ...requeueMissed([card.id, ...q.slice(index + 1)])]);
     setTally((t) => ({ ...t, [r]: t[r] + 1 }));
     setRevealed(false);
     setIndex((i) => i + 1);

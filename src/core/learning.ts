@@ -406,3 +406,17 @@ export function troubleCards(cards: CardWithReviews[]): TroubleCard[] {
   }
   return out.sort((a, b) => b.misses - a.misses || a.passesSince - b.passesSince);
 }
+
+/** How many other cards come between a miss and seeing that card again. */
+export const MISS_COMES_BACK_AFTER = 3;
+
+/**
+ * A missed card (the one at the front) comes back a few cards later instead of at the very back, so what
+ * you're still working on stays fresh and isn't buried under a pile of new cards.
+ */
+export function requeueMissed<T>(queue: readonly T[], gap = MISS_COMES_BACK_AFTER): T[] {
+  if (queue.length <= 1) return [...queue];
+  const [missed, ...rest] = queue;
+  const at = Math.min(gap, rest.length);
+  return [...rest.slice(0, at), missed, ...rest.slice(at)];
+}
