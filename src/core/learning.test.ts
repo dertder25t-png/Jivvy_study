@@ -99,6 +99,12 @@ describe('resumePoint', () => {
     expect(resumePoint(ids, regraded, [], undefined, undefined, ['c4'])).toMatchObject({ queue: ['c4'], reviews: 1 });
   });
 
+  it("doesn't count a card moved to Trouble cards as learned, or serve it again as new", () => {
+    const d = { ...done('c1'), c2: mark({ grade: 'struggling' }) };
+    const p = resumePoint(ids, progress({ done: d, pocket: ['c1', 'c2'] }), [], undefined, undefined, ['c3']);
+    expect(p).toMatchObject({ learned: 1, pocket: ['c3'] });
+  });
+
   it('skips cards that were deleted', () => {
     const p = resumePoint(['c1', 'c2', 'c4', 'c5', 'c6'], progress({ done: done('c1', 'c2', 'c3'), pocket: ['c1', 'c2', 'c3'] }));
     expect(p.pocket).toEqual(['c4', 'c5', 'c6']);

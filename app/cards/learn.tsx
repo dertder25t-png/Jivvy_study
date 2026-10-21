@@ -116,7 +116,13 @@ export default function LearnMode() {
     () => {
       if (!progress) return [];
       const end = everything ? new Date(8.64e15) : zonedToUtc(addDaysYmd(today, 1), '00:00', sem.tz);
-      return dueForReview(inSet, planned ? null : progress.done, end, startOfToday);
+      // Cards moved to Trouble cards today (missed on their redo) stay out of today's session.
+      const shelved = new Set(
+        Object.entries(progress.done)
+          .filter(([, m]) => m.grade === 'struggling' && Date.parse(m.at) >= startOfToday.getTime())
+          .map(([id]) => id),
+      );
+      return dueForReview(inSet, planned ? null : progress.done, end, startOfToday).filter((id) => !shelved.has(id));
     },
     [inSet, progress, planned, everything, today, sem.tz, startOfToday],
   );
@@ -369,6 +375,7 @@ export default function LearnMode() {
           : `${point.learned} of ${point.total} learned in this set`
       }
       onFinished={(cardId, mark) => markLearned(scopeKey, cardId, { ...mark, at: new Date().toISOString() })}
+      onShelved={(cardId, mark) => markLearned(scopeKey, cardId, { ...mark, grade: 'struggling', at: new Date().toISOString() })}
       onPocketComplete={() => {
         setFinished(point.pocket);
         setPhase('summary');

@@ -27,6 +27,11 @@ interface LearningCardProps {
   /** A card stuck (Good or Easy) — saved right away, so progress survives leaving mid-pocket. */
   onFinished: (cardId: string, mark: { grade: 'easy' | 'good'; accuracy: number; misses: number; review: boolean }) => void;
   onPocketComplete: () => void;
+  /**
+   * Missed again on its redo: the card leaves this session for the Trouble cards list instead of coming
+   * round a third time (saved so it stays out today). Without it, missed cards keep coming back.
+   */
+  onShelved?: (cardId: string, mark: { accuracy: number; misses: number; review: boolean }) => void;
   onOptions: () => void;
   onFlashcards: () => void;
   /** Cards you've had trouble with, to go through on their own (hidden when there are none). */
@@ -44,7 +49,7 @@ const NO_RING = (Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0
  * it sticks — so a pocket only ends when you've got every card in it.
  */
 export default function LearningCard({
-  pocket, queue: initialQueue, reviewIds, cards, direction, progressLine, onFinished, onPocketComplete, onOptions, onFlashcards, trouble,
+  pocket, queue: initialQueue, reviewIds, cards, direction, progressLine, onFinished, onPocketComplete, onShelved, onOptions, onFlashcards, trouble,
 }: LearningCardProps) {
   const c = useColors();
   const { isPhone } = useLayout();
@@ -71,6 +76,8 @@ export default function LearningCard({
   });
   const [round, setRound] = useState(0); // bumps per card shown, so a card that comes straight back restarts
   const hiddenInputRef = useRef<TextInput>(null);
+  /** The card just moved to Trouble cards, said once on the next card. */
+  const [shelvedNote, setShelvedNote] = useState<string | null>(null);
 
   const currentCardId = queue[0];
   const currentCard = cardMap.get(currentCardId);
@@ -135,6 +142,19 @@ export default function LearningCard({
   const handleGrade = (grade: Grade, score: number) => {
     if (!currentCard) return;
     reviewCard(currentCard, gradeToRating(grade));
+    if (grade === 'struggling' && onShelved && (misses[currentCardId] ?? 0) >= 1) {
+      // Missed on its redo too: off to Trouble cards, so the rest of the session isn't held up by it.
+      onShelved(currentCardId, { accuracy: score, misses: (misses[currentCardId] ?? 0) + 1, review: isReview });
+      setShelvedNote(prompt);
+      if (queue.length <= 1) {
+        onPocketComplete();
+        return;
+      }
+      setQueue((q) => q.slice(1));
+      nextCard(queue[1], misses);
+      return;
+    }
+    setShelvedNote(null);
     if (grade === 'struggling') {
       // It comes round again a few cards later (or right away if it's the last one), so it stays fresh.
       const missed = { ...misses, [currentCardId]: (misses[currentCardId] ?? 0) + 1 };
@@ -273,6 +293,12 @@ export default function LearningCard({
             </Row>
           </Row>
         </View>
+
+        {shelvedNote ? (
+          <T variant="small" color={c.warn}>
+            {`Missed twice — "${shelvedNote.length > 60 ? `${shelvedNote.slice(0, 57)}…` : shelvedNote}" moved to Trouble cards. Go over it there when you're ready.`}
+          </T>
+        ) : null}
 
         {/* One card: the question on top, where you answer it underneath. The question is framed as one so it
             never reads as the answer — especially in Mixed, where the side flips per card. */}

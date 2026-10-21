@@ -265,7 +265,8 @@ export function resumePoint(
   newToday?: readonly string[],
 ): ResumePoint {
   const inSet = new Set(orderedIds);
-  const learnedIds = orderedIds.filter((id) => progress.done[id]);
+  // A card moved to Trouble cards (missed on its redo) isn't learned yet.
+  const learnedIds = orderedIds.filter((id) => progress.done[id] && progress.done[id].grade !== 'struggling');
   const saved = progress.pocket.filter((id) => inSet.has(id));
   const stale = startOfToday != null && progress.pocket_started_at != null && Date.parse(progress.pocket_started_at) < startOfToday.getTime();
   const resuming = !stale && saved.some((id) => !finishedInPocket(progress, id));

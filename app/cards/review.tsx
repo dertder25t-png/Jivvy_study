@@ -104,8 +104,8 @@ export default function ReviewSession() {
 
   const rate = (r: Rating) => {
     if (!practice) reviewCard(card, r);
-    // A miss comes back a few cards later, not after the whole rest of the session.
-    if (r === 1) setQueue((q) => [...q.slice(0, index + 1), ...requeueMissed([card.id, ...q.slice(index + 1)])]);
+    // A miss comes back once, a few cards later; missed again, it's left for Trouble cards.
+    if (r === 1 && queue.indexOf(card.id) === index) setQueue((q) => [...q.slice(0, index + 1), ...requeueMissed([card.id, ...q.slice(index + 1)])]);
     setTally((t) => ({ ...t, [r]: t[r] + 1 }));
     setRevealed(false);
     setIndex((i) => i + 1);

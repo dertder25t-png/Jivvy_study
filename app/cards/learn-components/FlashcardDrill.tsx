@@ -20,7 +20,7 @@ interface FlashcardDrillProps {
 
 /**
  * Flip-card practice inside Learn mode. Flip, then "Got it" or "Still learning": the ones you're still
- * learning come round again a few cards later until every card is a "Got it".
+ * learning come round again once, a few cards later; still learning then, and they're left for Trouble cards.
  * Keys on the web: Space flips, 1 = still learning, 2 = got it.
  */
 function shuffled<T>(list: T[]): T[] {
@@ -44,6 +44,8 @@ export default function FlashcardDrill({ ids, cards, direction, shuffle = false,
   const [total, setTotal] = useState(queue.length);
   const [flipped, setFlipped] = useState(false);
   const [missed, setMissed] = useState<Set<string>>(new Set());
+  /** Still learning on the second go: left for Trouble cards. */
+  const [left, setLeft] = useState(0);
   const [firstTry, setFirstTry] = useState(0);
 
   const card = byId.get(queue[0] ?? '');
@@ -60,8 +62,12 @@ export default function FlashcardDrill({ ids, cards, direction, shuffle = false,
       if (!missed.has(card.id)) {
         onMiss(card.id);
         setMissed((m) => new Set(m).add(card.id));
+        setQueue((q) => requeueMissed(q));
+      } else {
+        // Still learning on its second go: it's on your Trouble cards list — no third time round here.
+        setLeft((n) => n + 1);
+        setQueue((q) => q.slice(1));
       }
-      setQueue((q) => requeueMissed(q));
     }
     setFlipped(false);
   };
@@ -86,9 +92,11 @@ export default function FlashcardDrill({ ids, cards, direction, shuffle = false,
   if (!card) {
     return (
       <Screen maxWidth={680}>
-        <Section title="All solid 🎉">
+        <Section title={left > 0 ? 'Done 🎉' : 'All solid 🎉'}>
           <T>
-            {`You got all ${total} card${total === 1 ? '' : 's'}${firstTry === total ? ' on the first try' : ''}.`}
+            {left > 0
+              ? `You got ${total - left} of ${total}. ${left} still need work — they're on your Trouble cards list, to go over on their own.`
+              : `You got all ${total} card${total === 1 ? '' : 's'}${firstTry === total ? ' on the first try' : ''}.`}
             {missed.size > 0 ? ` The ${missed.size} you had to go back to will come round again in Learn later today and over the next few days.` : ''}
           </T>
         </Section>
@@ -101,6 +109,7 @@ export default function FlashcardDrill({ ids, cards, direction, shuffle = false,
               const again = deal();
               setQueue(again);
               setTotal(again.length);
+              setLeft(0);
               setMissed(new Set());
               setFirstTry(0);
             }}
