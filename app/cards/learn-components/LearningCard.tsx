@@ -8,6 +8,7 @@ import type { Card as CardType } from '@/types/db';
 import type { StudyDirection } from '@/core/learning';
 import { checkAnswer, copyTimeSeconds, directionForCard, gradeToRating, type AnswerCheck } from '@/core/learning';
 import { stripPartLabel } from '@/core/flashcards/cardCheck';
+import { prefs } from '@/data/prefs';
 
 type Phase = 'visible' | 'hidden';
 type Grade = 'easy' | 'good' | 'struggling';
@@ -64,7 +65,7 @@ export default function LearningCard({
     const first = cardMap.get(queue[0]);
     if (!first) return 4;
     const d = directionForCard(direction, first.id);
-    return d === 'term_to_def' ? copyTimeSeconds(first.definition, first.term) : copyTimeSeconds(first.term, first.definition);
+    return d === 'term_to_def' ? copyTimeSeconds(first.definition, first.term, prefs.get().learnCopySpeed) : copyTimeSeconds(first.term, first.definition, prefs.get().learnCopySpeed);
   });
   const [round, setRound] = useState(0); // bumps per card shown, so a card that comes straight back restarts
   const hiddenInputRef = useRef<TextInput>(null);
@@ -107,8 +108,8 @@ export default function LearningCard({
     const next = id ? cardMap.get(id) : undefined;
     if (!next) return 4;
     return directionForCard(direction, next.id) === 'term_to_def'
-      ? copyTimeSeconds(next.definition, next.term)
-      : copyTimeSeconds(next.term, next.definition);
+      ? copyTimeSeconds(next.definition, next.term, prefs.get().learnCopySpeed)
+      : copyTimeSeconds(next.term, next.definition, prefs.get().learnCopySpeed);
   };
 
   const nextCard = (nextId: string | undefined, missed: Record<string, number>) => {

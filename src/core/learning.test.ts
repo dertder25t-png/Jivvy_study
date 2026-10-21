@@ -303,6 +303,13 @@ describe('copyTimeSeconds', () => {
   it('gives short answers a few seconds and long ones time to type them, up to a cap', () => {
     expect(copyTimeSeconds('cat', 'dog')).toBeLessThanOrEqual(7);
     expect(copyTimeSeconds('x'.repeat(200), 'term')).toBeGreaterThanOrEqual(60);
-    expect(copyTimeSeconds('x'.repeat(5000))).toBe(120);
+    expect(copyTimeSeconds('x'.repeat(5000))).toBe(300);
+  });
+
+  it('gives more time at a slower typing speed and less at a faster one', () => {
+    const def = 'x'.repeat(120);
+    expect(copyTimeSeconds(def, '', 1)).toBeGreaterThan(copyTimeSeconds(def, '', 3));
+    expect(copyTimeSeconds(def, '', 8)).toBeLessThan(copyTimeSeconds(def, '', 3));
+    expect(copyTimeSeconds(def, '', 0)).toBe(copyTimeSeconds(def, ''));
   });
 });

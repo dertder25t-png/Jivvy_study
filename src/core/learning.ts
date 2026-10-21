@@ -86,14 +86,20 @@ function sameWord(typed: string, actual: string): boolean {
   return allowed > 0 && editDistance(typed, actual) <= allowed;
 }
 
+/** Typing speed Learn assumes for the copy step, in characters a second (changeable in Learn's options). */
+export const DEFAULT_COPY_SPEED = 3;
+export const MIN_COPY_SPEED = 0.5;
+export const MAX_COPY_SPEED = 20;
+
 /**
  * How many seconds the answer stays up for copying before Learn hides it: time to read the card, then
- * about three characters a second of typing for the answer, so a long definition isn't gone before
+ * the answer's length at your typing speed (`charsPerSecond`), so a long definition isn't gone before
  * you can copy it. (While you're typing the countdown also holds — see LearningCard.)
  */
-export function copyTimeSeconds(answer: string, prompt = ''): number {
-  const secs = 5 + answer.trim().length * 0.3 + prompt.trim().length * 0.05;
-  return Math.min(120, Math.max(5, Math.round(secs)));
+export function copyTimeSeconds(answer: string, prompt = '', charsPerSecond = DEFAULT_COPY_SPEED): number {
+  const speed = Math.min(MAX_COPY_SPEED, Math.max(MIN_COPY_SPEED, charsPerSecond || DEFAULT_COPY_SPEED));
+  const secs = 5 + answer.trim().length / speed + prompt.trim().length * 0.05;
+  return Math.min(300, Math.max(3, Math.round(secs)));
 }
 
 export type AnswerVerdict = 'right' | 'close' | 'wrong';

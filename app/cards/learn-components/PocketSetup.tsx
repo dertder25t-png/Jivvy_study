@@ -1,7 +1,54 @@
-import React, { useState } from 'react';
-import { View } from 'react-native';
-import { Button, Card, Chip, Row, Screen, Section, T } from '@/ui/components';
-import type { StudyDirection } from '@/core/learning';
+import React, { useRef, useState } from 'react';
+import { PanResponder, View } from 'react-native';
+import { Button, Card, Chip, Field, Row, Screen, Section, T } from '@/ui/components';
+import { copyTimeSeconds, MAX_COPY_SPEED, MIN_COPY_SPEED, type StudyDirection } from '@/core/learning';
+import { prefs } from '@/data/prefs';
+import { useColors } from '@/ui/theme';
+
+/** The slider covers everyday typing speeds; the box takes anything from MIN to MAX. */
+const SLIDER_MIN = 1;
+const SLIDER_MAX = 10;
+const clampSpeed = (n: number) => Math.min(MAX_COPY_SPEED, Math.max(MIN_COPY_SPEED, n));
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/** Drag or tap along the track to pick a value (steps of 0.5). */
+function SpeedSlider({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+  const c = useColors();
+  const width = useRef(1);
+  const pick = (x: number) => {
+    const t = Math.min(1, Math.max(0, x / width.current));
+    onChange(Math.round((SLIDER_MIN + t * (SLIDER_MAX - SLIDER_MIN)) * 2) / 2);
+  };
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (e) => pick(e.nativeEvent.locationX),
+      onPanResponderMove: (e) => pick(e.nativeEvent.locationX),
+    }),
+  ).current;
+  const t = (Math.min(SLIDER_MAX, Math.max(SLIDER_MIN, value)) - SLIDER_MIN) / (SLIDER_MAX - SLIDER_MIN);
+  return (
+    <View
+      {...pan.panHandlers}
+      onLayout={(e) => { width.current = Math.max(1, e.nativeEvent.layout.width); }}
+      style={{ height: 32, justifyContent: 'center', flex: 1 }}
+      accessibilityRole="adjustable"
+      accessibilityLabel="Typing speed"
+    >
+      <View pointerEvents="none" style={{ height: 6, borderRadius: 3, backgroundColor: c.border }}>
+        <View style={{ width: `${t * 100}%`, height: 6, borderRadius: 3, backgroundColor: c.primary }} />
+      </View>
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute', left: `${t * 100}%`, marginLeft: -10, width: 20, height: 20, borderRadius: 10,
+          backgroundColor: c.primary, borderWidth: 2, borderColor: c.bg,
+        }}
+      />
+    </View>
+  );
+}
 
 const DIRECTIONS: Array<{ key: StudyDirection; label: string; hint: string }> = [
   { key: 'term_to_def', label: 'Answer with the definition', hint: "You're shown the term and type its definition." },
@@ -33,6 +80,12 @@ export default function PocketSetup({
 }: PocketSetupProps) {
   const [direction, setDirection] = useState<StudyDirection>(initialDirection);
   const [shuffle, setShuffle] = useState(initialShuffle);
+  const [speed, setSpeed] = useState(() => clampSpeed(prefs.get().learnCopySpeed || 3));
+  const [speedText, setSpeedText] = useState(String(round1(speed)));
+  const setSpeedFromSlider = (n: number) => {
+    setSpeed(n);
+    setSpeedText(String(n));
+  };
 
   return (
     <Screen maxWidth={760}
@@ -40,7 +93,10 @@ export default function PocketSetup({
         <View style={{ gap: 8 }}>
           <Button
             title={editing ? 'Save and keep going' : 'Start learning'}
-            onPress={() => onStart(direction, shuffle)}
+            onPress={() => {
+              prefs.set({ learnCopySpeed: speed });
+              onStart(direction, shuffle);
+            }}
             variant="primary"
           />
           {editing ? <Button title="Cancel" variant="ghost" onPress={editing.onCancel} /> : null}
@@ -72,6 +128,30 @@ export default function PocketSetup({
             <T variant="small" muted>{planNote}</T>
           </Card>
         ) : null}
+
+        <Card>
+          <View style={{ gap: 8 }}>
+            <T variant="heading">Copy speed</T>
+            <Row style={{ alignItems: 'center', gap: 12 }}>
+              <SpeedSlider value={speed} onChange={setSpeedFromSlider} />
+              <Field
+                value={speedText}
+                keyboardType="decimal-pad"
+                accessibilityLabel="Typing speed, characters per second"
+                style={{ width: 72, textAlign: 'right' }}
+                onChangeText={(v) => {
+                  setSpeedText(v);
+                  const n = Number(v);
+                  if (v.trim() !== '' && !Number.isNaN(n) && n > 0) setSpeed(clampSpeed(n));
+                }}
+                onBlur={() => setSpeedText(String(round1(speed)))}
+              />
+            </Row>
+            <T variant="small" muted>
+              {`${round1(speed)} characters a second — lower gives you longer to copy each answer. A 100-character answer stays up about ${copyTimeSeconds('x'.repeat(100), '', speed)}s (the timer also pauses while you type).`}
+            </T>
+          </View>
+        </Card>
 
         <Card>
           <View style={{ gap: 8 }}>
