@@ -89,7 +89,7 @@ function sameWord(typed: string, actual: string): boolean {
 /** Typing speed Learn assumes for the copy step, in characters a second (changeable in Learn's options). */
 export const DEFAULT_COPY_SPEED = 3;
 export const MIN_COPY_SPEED = 0.5;
-export const MAX_COPY_SPEED = 20;
+export const MAX_COPY_SPEED = 50;
 
 /**
  * How many seconds the answer stays up for copying before Learn hides it: time to read the card, then
@@ -98,8 +98,10 @@ export const MAX_COPY_SPEED = 20;
  */
 export function copyTimeSeconds(answer: string, prompt = '', charsPerSecond = DEFAULT_COPY_SPEED): number {
   const speed = Math.min(MAX_COPY_SPEED, Math.max(MIN_COPY_SPEED, charsPerSecond || DEFAULT_COPY_SPEED));
-  const secs = 5 + answer.trim().length / speed + prompt.trim().length * 0.05;
-  return Math.min(300, Math.max(3, Math.round(secs)));
+  // Reading time shrinks too at fast speeds (5s at the default), so a high speed really pushes you.
+  const read = Math.min(5, 15 / speed);
+  const secs = read + answer.trim().length / speed + prompt.trim().length * 0.05;
+  return Math.min(300, Math.max(2, Math.round(secs)));
 }
 
 export type AnswerVerdict = 'right' | 'close' | 'wrong';
@@ -374,4 +376,33 @@ export function studiedToday(cards: CardWithReviews[], today: string, dayOf: (is
     if (todays.some((r) => r.rating <= 2)) shaky.push(k.card.id);
   }
   return { all, shaky };
+}
+
+/** A card you've had trouble with: how often it's been missed, and passes since the last miss. */
+export interface TroubleCard {
+  id: string;
+  misses: number;
+  passesSince: number;
+}
+
+/** Passes in a row, after a miss, that take a card off the trouble list. */
+export const TROUBLE_CLEARED_AFTER = 2;
+
+/**
+ * The cards you've had trouble with: missed at least once (anywhere — Learn, Review, flashcards) and not
+ * yet recalled `TROUBLE_CLEARED_AFTER` times since. Most-missed first. Worked out from review history,
+ * so it follows you to every device and clears itself as you get them right.
+ */
+export function troubleCards(cards: CardWithReviews[]): TroubleCard[] {
+  const out: TroubleCard[] = [];
+  for (const k of cards) {
+    const sorted = [...k.reviews].sort((a, b) => a.reviewed_at.localeCompare(b.reviewed_at));
+    const misses = sorted.filter((r) => r.rating === 1).length;
+    if (misses === 0) continue;
+    let passesSince = 0;
+    for (let i = sorted.length - 1; i >= 0 && sorted[i].rating > 1; i--) passesSince++;
+    if (passesSince >= TROUBLE_CLEARED_AFTER) continue;
+    out.push({ id: k.card.id, misses, passesSince });
+  }
+  return out.sort((a, b) => b.misses - a.misses || a.passesSince - b.passesSince);
 }

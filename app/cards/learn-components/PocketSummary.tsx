@@ -38,6 +38,8 @@ interface PocketSummaryProps {
   /** Go through the whole set again from the start (optionally shuffled). */
   onRedo: (shuffle: boolean) => void;
   onReview: () => void;
+  /** Cards you've had trouble with: go through just those, typed or as flashcards. */
+  trouble?: { count: number; onPractice: () => void; onFlashcards: () => void };
   onEndSession: () => void;
 }
 
@@ -45,7 +47,7 @@ const cards = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
 
 export default function PocketSummary({
   stats, complete, dueWaiting, unlearned, allLearned, total, plan, nextReviewIn, retried, shuffled,
-  onNextPocket, onFlashcards, onRedo, onReview, onEndSession,
+  onNextPocket, onFlashcards, onRedo, onReview, trouble, onEndSession,
 }: PocketSummaryProps) {
   const c = useColors();
   const [redoShuffled, setRedoShuffled] = useState(shuffled);
@@ -154,6 +156,22 @@ export default function PocketSummary({
               </View>
             </Card>
           </View>
+        ) : null}
+
+        {trouble ? (
+          <Card tone="warn">
+            <View style={{ gap: 8 }}>
+              <T variant="heading">Trouble cards: {trouble.count}</T>
+              <T variant="small">
+                Cards you've missed and haven't got right twice in a row since. Go through just these — each one drops
+                off the list once you've recalled it twice.
+              </T>
+              <Row style={{ flexWrap: 'wrap' }}>
+                <Button title="Practice just these" small onPress={trouble.onPractice} />
+                <Button title="As flashcards" small variant="secondary" onPress={trouble.onFlashcards} />
+              </Row>
+            </View>
+          </Card>
         ) : null}
 
         <Card tone="alt">

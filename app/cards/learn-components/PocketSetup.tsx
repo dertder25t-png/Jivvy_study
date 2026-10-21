@@ -7,7 +7,7 @@ import { useColors } from '@/ui/theme';
 
 /** The slider covers everyday typing speeds; the box takes anything from MIN to MAX. */
 const SLIDER_MIN = 1;
-const SLIDER_MAX = 10;
+const SLIDER_MAX = MAX_COPY_SPEED;
 const clampSpeed = (n: number) => Math.min(MAX_COPY_SPEED, Math.max(MIN_COPY_SPEED, n));
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -148,7 +148,7 @@ export default function PocketSetup({
               />
             </Row>
             <T variant="small" muted>
-              {`${round1(speed)} characters a second — lower gives you longer to copy each answer. A 100-character answer stays up about ${copyTimeSeconds('x'.repeat(100), '', speed)}s (the timer also pauses while you type).`}
+              {`${round1(speed)} characters a second — lower gives you longer to copy each answer, higher (up to ${MAX_COPY_SPEED}) pushes you. A 100-character answer stays up about ${copyTimeSeconds('x'.repeat(100), '', speed)}s (the timer also pauses while you type).`}
             </T>
           </View>
         </Card>

@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { inScope } from '@/core/session';
 import {
   dailyNewCards, dueForReview, finishedInPocket, learnOrder, learnScopeKey, newShuffleSeed, nextReviewAt,
-  pocketStats, resumePoint, studiedToday, type StudyDirection,
+  pocketStats, resumePoint, studiedToday, troubleCards, type StudyDirection,
 } from '@/core/learning';
 import { PREP_HORIZON_DAYS } from '@/core/testPrep';
 import { addDaysYmd, dateStringDayDiff, localDateString, relativeTime, zonedToUtc } from '@/core/time';
@@ -20,7 +20,7 @@ import PocketSummary from './learn-components/PocketSummary';
 import FlashcardPicker from './learn-components/FlashcardPicker';
 import FlashcardDrill from './learn-components/FlashcardDrill';
 
-type Phase = 'learning' | 'summary' | 'options' | 'pick' | 'flashcards';
+type Phase = 'learning' | 'summary' | 'options' | 'pick' | 'flashcards' | 'trouble';
 
 /**
  * Learn mode. Each session starts with every card that's due for review (so what you learned on day 1 is
@@ -54,6 +54,8 @@ export default function LearnMode() {
   const [returnTo, setReturnTo] = useState<Phase>('learning');
   /** Past today's plan: keep learning new cards anyway. */
   const [ahead, setAhead] = useState(false);
+  /** The trouble cards being gone through on their own (fixed when started, so passing one doesn't reshuffle). */
+  const [troubleRun, setTroubleRun] = useState<string[]>([]);
 
   const scope = useMemo(
     () => ({
@@ -122,6 +124,15 @@ export default function LearnMode() {
     () => studiedToday(inSet, today, (iso) => localDateString(new Date(iso), sem.tz)),
     [inSet, today, sem.tz],
   );
+  const trouble = useMemo(() => {
+    const inPool = new Set(ids);
+    return troubleCards(inSet).filter((t) => inPool.has(t.id)).map((t) => t.id);
+  }, [inSet, ids]);
+  const startTrouble = () => {
+    setTroubleRun(trouble);
+    setPhase('trouble');
+  };
+
   const point = progress
     ? (planned ? resumePoint(ids, progress, due, newToday, startOfToday) : resumePoint(ids, progress, due, undefined, startOfToday, newToday))
     : null;
@@ -238,8 +249,27 @@ export default function LearnMode() {
           const studied = inSet.some((k) => k.card.id === cardId && k.reviews.length > 0);
           if (card && studied) reviewCard(card, 1);
         }}
-        onBack={() => setPhase(returnTo === 'summary' ? 'summary' : 'learning')}
+        onBack={() => setPhase(returnTo === 'summary' || returnTo === 'trouble' ? returnTo : 'learning')}
         onDone={goBack}
+      />
+    );
+  }
+
+  if (phase === 'trouble' && troubleRun.length > 0) {
+    return (
+      <LearningCard
+        key={`trouble:${troubleRun.join(',')}`}
+        pocket={troubleRun}
+        queue={troubleRun}
+        reviewIds={new Set()}
+        cards={pool}
+        direction={progress.direction}
+        progressLine={`Trouble cards only · ${troubleRun.length} you've missed before`}
+        // Each answer is saved as a review (inside LearningCard), which is what clears a card off the list.
+        onFinished={() => {}}
+        onPocketComplete={() => setPhase('learning')}
+        onOptions={() => setPhase('options')}
+        onFlashcards={() => openFlashcards(troubleRun, 'trouble')}
       />
     );
   }
@@ -312,6 +342,7 @@ export default function LearnMode() {
           setPhase('learning');
         }}
         onReview={review}
+        trouble={trouble.length > 0 ? { count: trouble.length, onPractice: startTrouble, onFlashcards: () => openFlashcards(trouble, phase === 'summary' ? 'summary' : 'learning') } : undefined}
         onEndSession={goBack}
       />
     );
@@ -344,6 +375,7 @@ export default function LearnMode() {
       }}
       onOptions={() => setPhase('options')}
       onFlashcards={() => openFlashcards(todays.shaky, 'learning')}
+      trouble={{ count: trouble.length, onOpen: startTrouble }}
     />
   );
 }

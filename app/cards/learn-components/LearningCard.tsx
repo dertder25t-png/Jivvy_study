@@ -29,6 +29,8 @@ interface LearningCardProps {
   onPocketComplete: () => void;
   onOptions: () => void;
   onFlashcards: () => void;
+  /** Cards you've had trouble with, to go through on their own (hidden when there are none). */
+  trouble?: { count: number; onOpen: () => void };
 }
 
 // The browser's own focus ring clashes with ours (we recolor the border instead).
@@ -42,7 +44,7 @@ const NO_RING = (Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0
  * it sticks — so a pocket only ends when you've got every card in it.
  */
 export default function LearningCard({
-  pocket, queue: initialQueue, reviewIds, cards, direction, progressLine, onFinished, onPocketComplete, onOptions, onFlashcards,
+  pocket, queue: initialQueue, reviewIds, cards, direction, progressLine, onFinished, onPocketComplete, onOptions, onFlashcards, trouble,
 }: LearningCardProps) {
   const c = useColors();
   const { isPhone } = useLayout();
@@ -257,6 +259,11 @@ export default function LearningCard({
           <Row style={{ justifyContent: 'space-between' }}>
             <T variant="small" muted style={{ flex: 1 }}>{progressLine}</T>
             <Row gap={space.md}>
+              {trouble && trouble.count > 0 ? (
+                <Pressable onPress={trouble.onOpen} accessibilityRole="button" hitSlop={8}>
+                  <T variant="small" color={c.warn} style={{ fontWeight: '600' }}>Trouble cards ({trouble.count})</T>
+                </Pressable>
+              ) : null}
               <Pressable onPress={onFlashcards} accessibilityRole="button" hitSlop={8}>
                 <T variant="small" color={c.primary} style={{ fontWeight: '600' }}>Flashcards</T>
               </Pressable>

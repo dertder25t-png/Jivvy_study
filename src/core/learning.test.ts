@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Card, CardReview, LearnMark, LearnProgress } from '@/types/db';
 import {
-  checkAnswer, copyTimeSeconds, dailyNewCards, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
+  checkAnswer, copyTimeSeconds, dailyNewCards, troubleCards, dueForReview, finishedInPocket, gradeToRating, learnOrder, learnScopeKey, mixPocket, nextReviewAt, pocketStats, resumePoint, studiedToday,
 } from './learning';
 import { nextReview, stateFromReviews, type CardWithReviews } from './scheduling';
 import { mkCard, mkReview } from './testutil';
@@ -311,5 +311,29 @@ describe('copyTimeSeconds', () => {
     expect(copyTimeSeconds(def, '', 1)).toBeGreaterThan(copyTimeSeconds(def, '', 3));
     expect(copyTimeSeconds(def, '', 8)).toBeLessThan(copyTimeSeconds(def, '', 3));
     expect(copyTimeSeconds(def, '', 0)).toBe(copyTimeSeconds(def, ''));
+    expect(copyTimeSeconds(def, '', 50)).toBeLessThanOrEqual(3);
+  });
+});
+
+describe('troubleCards', () => {
+  const k = (id: string, ratings: number[]): CardWithReviews => ({
+    card: mkCard('c', { id }),
+    reviews: ratings.map((rating, i) => mkReview(id, { rating: rating as 1 | 2 | 3 | 4, reviewed_at: `2026-09-2${i}T10:00:00.000Z` })),
+  });
+
+  it('lists missed cards until they are recalled twice in a row, most-missed first', () => {
+    const list = troubleCards([
+      k('never', [3, 3]),
+      k('once', [1, 3]),
+      k('cleared', [1, 3, 3]),
+      k('often', [1, 1, 3, 1]),
+      k('new', []),
+    ]);
+    expect(list.map((t) => t.id)).toEqual(['often', 'once']);
+    expect(list[0]).toMatchObject({ misses: 3, passesSince: 0 });
+  });
+
+  it('a miss after being cleared puts it back', () => {
+    expect(troubleCards([k('c', [1, 3, 3, 1])]).map((t) => t.id)).toEqual(['c']);
   });
 });
