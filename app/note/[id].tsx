@@ -1,20 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert, Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View, useWindowDimensions,
+  Alert, AppState, Animated, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View, useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { countWords } from '@/core/markdown';
-import { bodyToOutline, emptyOutline, outlineToMarkdown, type OutlineNode } from '@/core/outline';
+import { noteMarkdown, toggleTask } from '@/core/noteText';
+import { bodyToOutline } from '@/core/outline';
 import { createNote, createSubNote, deleteNote, fileNote, saveNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
 import { prefs, usePrefs } from '@/data/prefs';
+import { copyNoteMarkdown, downloadNote } from '@/data/noteExport';
+import { rememberVersion, versionsOf, type NoteVersion } from '@/data/noteHistory';
 import { store } from '@/data/store';
 import { Button, Chip, Empty, Row, Screen, T } from '@/ui/components';
 import { SIDEBAR_WIDTH, useLayout } from '@/ui/layout';
 import { NoteCardsPanel, PANEL_WIDTH } from '@/ui/NoteCardsPanel';
-import { OutlineEditor } from '@/ui/OutlineEditor';
+import { MarkdownEditor, type MarkdownEditorHandle } from '@/ui/MarkdownEditor';
+import { MarkdownView } from '@/ui/MarkdownView';
 import { space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 import { useSafeBack } from '@/ui/nav';
@@ -59,8 +63,9 @@ function IconBtn({
 
 /**
  * The note page. Open and borderless like a sheet of paper: a big title, one wide column,
- * and nothing boxed in. Every note is a bullet outline — type freely on one line, or press
- * Tab to nest a sub-point. The flashcard panel lives on the left and slides in and out.
+ * and nothing boxed in. The note is plain markdown, edited as one piece of text (select and copy
+ * anything) and read rendered — Ctrl/Cmd+E flips between the two, like Obsidian. The flashcard
+ * panel lives on the left and slides in and out.
  */
 export default function NoteEditor() {
   const { id, courseId } = useLocalSearchParams<{ id: string; courseId?: string }>();
@@ -71,7 +76,7 @@ export default function NoteEditor() {
   const { width } = useWindowDimensions();
   const { isDesktop } = useLayout();
   const wide = width - (isDesktop ? SIDEBAR_WIDTH : 0) >= WIDE;
-  const { notePanelOpen, subNoteQuickAddEnabled, subNoteShortcutKey } = usePrefs();
+  const { notePanelOpen, subNoteQuickAddEnabled, subNoteShortcutKey, noteMode } = usePrefs();
   const panelOpen = notePanelOpen ?? wide;
 
   const isNew = id === 'new';
@@ -82,21 +87,31 @@ export default function NoteEditor() {
   const note = noteId ? sem.rows.notes.find((n) => n.id === noteId) ?? null : null;
 
   const [title, setTitle] = useState(existing?.title ?? '');
-  const [outline, setOutline] = useState<OutlineNode[]>(
-    existing?.outline ?? (existing ? bodyToOutline(existing.body) : emptyOutline()),
-  );
-  const [body, setBody] = useState(existing?.body ?? outlineToMarkdown(outline));
-  const outlineDirty = useRef(false);
+  const [body, setBody] = useState(() => (existing ? noteMarkdown(existing) : ''));
   const [menuOpen, setMenuOpen] = useState(false);
-  const latest = useRef({ title, body, outline });
-  latest.current = { title, body, outline };
+  const [mode, setModeState] = useState<'edit' | 'read'>(isNew || !existing?.body.trim() ? 'edit' : noteMode);
+  const [history, setHistory] = useState<NoteVersion[] | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const editor = useRef<MarkdownEditorHandle | null>(null);
+  const latest = useRef({ title, body });
+  latest.current = { title, body };
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const onOutlineChange = (next: OutlineNode[]) => {
-    outlineDirty.current = true;
-    setOutline(next);
-    setBody(outlineToMarkdown(next));
+  const setMode = (m: 'edit' | 'read') => {
+    setModeState(m);
+    prefs.set({ noteMode: m });
+    if (m === 'edit') setTimeout(() => editor.current?.focus(), 50);
   };
+  const say = (msg: string) => {
+    setFlash(msg);
+    setTimeout(() => setFlash((cur) => (cur === msg ? null : cur)), 2200);
+  };
+
+  // Keep what the note looked like when it was opened, so this session's edits can always be undone.
+  useEffect(() => {
+    if (existing) void rememberVersion(existing.id, existing, existing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ---------------------------------------------------------------- saving
   const findNote = (): Note | null => {
@@ -107,19 +122,20 @@ export default function NoteEditor() {
   /** Writes the current text (creating the note on first real content) and returns the stored note. */
   const persist = (): Note | null => {
     if (deleted.current) return null;
-    const { title: t, body: b, outline: o } = latest.current;
+    const { title: t, body: b } = latest.current;
     const cur = findNote();
     if (cur) {
-      if (cur.body !== b || (cur.title ?? '') !== t.trim() || outlineDirty.current) {
-        saveNote(cur, { title: t.trim() || null, body: b, outline: o });
-        outlineDirty.current = false;
+      if (cur.body !== b || (cur.title ?? '') !== t.trim()) {
+        void rememberVersion(cur.id, cur, { body: b });
+        // `outline` is still written (as the tree of this markdown) so an older copy of the app that
+        // reads the tree first shows the same words rather than a stale version.
+        saveNote(cur, { title: t.trim() || null, body: b, outline: bodyToOutline(b) });
       }
       return findNote();
     }
     if (!b.trim() && !t.trim()) return null;
-    const n = createNote({ body: b, via: 'in_app', explicitCourseId: courseId ?? null, outline: o });
+    const n = createNote({ body: b, via: 'in_app', explicitCourseId: courseId ?? null });
     created.current = n;
-    outlineDirty.current = false;
     if (t.trim()) saveNote(n, { title: t.trim() });
     return findNote();
   };
@@ -152,9 +168,44 @@ export default function NoteEditor() {
       if (timer.current) clearTimeout(timer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, body, outline]);
+  }, [title, body]);
 
   useEffect(() => () => leave(), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Never lose the last keystrokes: save at once when the tab is closed/hidden or the app goes to the background.
+  useEffect(() => {
+    const now = () => persist();
+    const sub = AppState.addEventListener('change', (st) => { if (st !== 'active') now(); });
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const onHide = () => { if (document.visibilityState === 'hidden') now(); };
+      window.addEventListener('pagehide', now);
+      window.addEventListener('beforeunload', now);
+      document.addEventListener('visibilitychange', onHide);
+      return () => {
+        sub.remove();
+        window.removeEventListener('pagehide', now);
+        window.removeEventListener('beforeunload', now);
+        document.removeEventListener('visibilitychange', onHide);
+      };
+    }
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ctrl/Cmd+E: switch between editing and reading (Obsidian's shortcut).
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
+        e.preventDefault();
+        setMode(mode === 'edit' ? 'read' : 'edit');
+      }
+    };
+    // capture phase: the text box handles its own keys and would otherwise keep this one to itself
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   // ---------------------------------------------------------------- flashcard panel (left)
   const progress = useRef(new Animated.Value(panelOpen ? 1 : 0)).current;
@@ -216,8 +267,34 @@ export default function NoteEditor() {
   const pendingCount = note ? sem.rows.cards.filter((k) => k.source_note_id === note.id && k.status === 'pending').length : 0;
   const words = countWords(body);
   const dirty = note
-    ? note.body !== body || (note.title ?? '') !== title.trim() || outlineDirty.current
+    ? note.body !== body || (note.title ?? '') !== title.trim()
     : body.trim() !== '' || title.trim() !== '';
+
+  const copy = async () => {
+    try {
+      await copyNoteMarkdown(body);
+      say('Copied as Markdown');
+    } catch {
+      say("Couldn't copy — select the text and copy it instead");
+    }
+  };
+  const download = async () => {
+    const saved = persist();
+    if (saved) await downloadNote(saved).catch(() => say("Couldn't save the file"));
+  };
+  const openHistory = async () => {
+    const n = persist();
+    setHistory(n ? await versionsOf(n.id) : []);
+  };
+  const restore = (v: NoteVersion) => {
+    const n = findNote();
+    if (n) void rememberVersion(n.id, { title: title.trim() || null, body }, { body: v.body }, new Date(), true);
+    setTitle(v.title ?? '');
+    setBody(v.body);
+    setHistory(null);
+    setMenuOpen(false);
+    say('Restored — the version you replaced is in history too');
+  };
 
   // ---------------------------------------------------------------- page
   const column = { flex: 1, width: '100%' as const, maxWidth: COLUMN, paddingHorizontal: 24 };
@@ -234,6 +311,12 @@ export default function NoteEditor() {
         {subNoteQuickAddEnabled && note ? (
           <IconBtn icon="add-outline" label="Add sub-note" onPress={addSubNote} badge={subNoteCount || undefined} />
         ) : null}
+        <IconBtn
+          icon={mode === 'edit' ? 'book-outline' : 'create-outline'}
+          label={mode === 'edit' ? 'Reading view (Ctrl+E)' : 'Edit (Ctrl+E)'}
+          onPress={() => setMode(mode === 'edit' ? 'read' : 'edit')}
+        />
+        <IconBtn icon="copy-outline" label="Copy as Markdown" onPress={copy} />
         <IconBtn icon="ellipsis-vertical" label="More" onPress={() => setMenuOpen((v) => !v)} active={menuOpen} />
       </View>
 
@@ -251,6 +334,27 @@ export default function NoteEditor() {
               ))}
             </Row>
             {note?.course_inferred ? <T variant="small" muted>We guessed this one — tap the right class to confirm.</T> : null}
+            <T variant="label" muted style={{ marginTop: 4 }}>Export</T>
+            <Row style={{ flexWrap: 'wrap' }}>
+              <Button title="Copy as Markdown" variant="secondary" small onPress={copy} />
+              {note ? <Button title={Platform.OS === 'web' ? 'Download .md' : 'Share as .md'} variant="secondary" small onPress={download} /> : null}
+              {note ? <Button title="Version history" variant="secondary" small onPress={openHistory} /> : null}
+            </Row>
+            {history ? (
+              <View style={{ gap: 6, paddingVertical: 4 }}>
+                <T variant="small" muted>
+                  {history.length ? 'Earlier versions saved on this device. Restoring keeps the current text in history too.' : 'No earlier versions on this device yet.'}
+                </T>
+                {history.map((v) => (
+                  <Row key={v.at} style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <T variant="small" style={{ flex: 1 }} numberOfLines={1}>
+                      {new Date(v.at).toLocaleString()} · {v.body.trim().split(/\s+/).filter(Boolean).length} words — {v.body.trim().slice(0, 50) || '(empty)'}
+                    </T>
+                    <Button title="Restore" variant="secondary" small onPress={() => restore(v)} />
+                  </Row>
+                ))}
+              </View>
+            ) : null}
             {note ? <Button title="Delete note" variant="danger" small onPress={remove} style={{ alignSelf: 'flex-start' }} /> : null}
           </View>
         </View>
@@ -278,7 +382,13 @@ export default function NoteEditor() {
                 borderWidth: 0, backgroundColor: 'transparent', ...NO_RING,
               }}
             />
-            <OutlineEditor nodes={outline} onChange={onOutlineChange} autoFocus={isNew} />
+            {mode === 'edit' ? (
+              <MarkdownEditor ref={editor} value={body} onChange={setBody} autoFocus={isNew} />
+            ) : (
+              <View style={{ minHeight: 320 }}>
+                <MarkdownView text={body} onToggleTask={(i) => setBody((b) => toggleTask(b, i))} />
+              </View>
+            )}
           </View>
         </ScrollView>
       </View>
@@ -294,7 +404,7 @@ export default function NoteEditor() {
         <T variant="small" muted style={{ fontSize: 12 }}>
           {words.toLocaleString()} word{words === 1 ? '' : 's'} · {body.length.toLocaleString()} characters
         </T>
-        <T variant="small" muted style={{ fontSize: 12 }}>{dirty ? 'Saving…' : note ? 'Saved' : ''}</T>
+        <T variant="small" muted style={{ fontSize: 12 }}>{flash ?? (dirty ? 'Saving…' : note ? 'Saved' : '')}</T>
       </View>
     </View>
   );

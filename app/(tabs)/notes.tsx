@@ -7,6 +7,7 @@ import { buildNoteTree, type NoteTreeNode } from '@/core/noteTree';
 import { relativeTime } from '@/core/time';
 import { createSubNote, fileNote } from '@/data/actions';
 import { useSemester } from '@/data/derived';
+import { downloadAllNotes } from '@/data/noteExport';
 import { usePrefs } from '@/data/prefs';
 import { Button, Card, Chip, Dot, Empty, Row, Screen, Section, T } from '@/ui/components';
 import { useLayout } from '@/ui/layout';
@@ -15,7 +16,7 @@ import { radius, space, useColors } from '@/ui/theme';
 import type { Note } from '@/types/db';
 
 function preview(n: Note): string {
-  const first = (n.body.trim().split('\n').find((l) => l.trim()) ?? '').replace(/^\s*-\s*(\[[ xX]\]\s*)?/, '');
+  const first = (n.body.trim().split('\n').find((l) => l.trim()) ?? '').replace(/^\s*([-*+>]|\d+[.)]|#+)\s*(\[[ xX]\]\s*)?/, '');
   return (n.title || first).replace(/[#*_`]/g, '').slice(0, 90) || 'Empty note';
 }
 
@@ -120,6 +121,9 @@ export default function Notes() {
       <Row gap={8}>
         <Button title="New note" onPress={() => router.push('/note/new')} style={isPhone ? { flex: 1 } : undefined} />
         <Button title="Import" variant="secondary" onPress={() => router.push('/import')} style={isPhone ? { flex: 1 } : undefined} />
+        {notes.length > 0 ? (
+          <Button title="Export all" variant="secondary" onPress={() => void downloadAllNotes()} style={isPhone ? { flex: 1 } : undefined} />
+        ) : null}
       </Row>
 
       {inbox.length > 0 ? (

@@ -5,6 +5,7 @@ import {
   changePassword, currentAccount, deleteAccount, downloadMyData, friendlyAuthError, saveProfile, type AccountInfo,
 } from '@/data/account';
 import { leaveGuestMode, signOut } from '@/data/boot';
+import { downloadAllNotes } from '@/data/noteExport';
 import { restartApp } from '@/data/session';
 import { prefs, usePrefs } from '@/data/prefs';
 import { store } from '@/data/store';
@@ -72,6 +73,15 @@ export default function Account() {
     setBusy('download');
     try {
       await downloadMyData();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const downloadNotes = async () => {
+    setBusy('notes');
+    try {
+      await downloadAllNotes();
     } finally {
       setBusy(null);
     }
@@ -160,6 +170,8 @@ export default function Account() {
         <Card>
           <T variant="small" muted>Everything you’ve added — courses, notes, cards, grades — in one file you own.</T>
           <Button title="Download my data" variant="secondary" small onPress={download} loading={busy === 'download'} />
+          <T variant="small" muted>Your notes as Markdown files, one folder per course — unzip and open the folder in Obsidian as a vault.</T>
+          <Button title="Export all notes (.zip)" variant="secondary" small onPress={downloadNotes} loading={busy === 'notes'} />
         </Card>
       </Section>
 

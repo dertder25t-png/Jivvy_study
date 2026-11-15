@@ -11,6 +11,8 @@ export interface Prefs {
   studentName: string;
   /** Note editor's left flashcard panel: null = not chosen yet (open on wide screens, closed on phones). */
   notePanelOpen: boolean | null;
+  /** Note page opens for editing (markdown source) or reading (rendered), like Obsidian's two modes. */
+  noteMode: 'edit' | 'read';
   /** Chose "use without an account": data stays on this device. */
   guest: boolean;
   /** Whether to offer moving this device's data into an account. */
@@ -52,6 +54,7 @@ const DEFAULTS = (): Prefs => ({
   notificationsEnabled: true,
   studentName: '',
   notePanelOpen: null,
+  noteMode: 'edit',
   guest: false,
   localImport: 'pending',
   lastOpenedAt: null,
