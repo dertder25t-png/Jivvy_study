@@ -82,3 +82,28 @@ export function funnel(items: GeneratedItem[]): { total: number; survived: numbe
   }
   return { total: items.length, survived, byReason };
 }
+
+/**
+ * Model cards with the rules as a safety net, one card per passage: take the model's card when it
+ * passes Stage 3, otherwise the rule-based one (so a model slip never costs a card the rules had).
+ */
+export function mergeRewrites(model: RewriteResponse, rules: RewriteResponse, existing: ExistingCard[], minConfidence?: number): RewriteResponse {
+  const fromModel = new Map(model.cards.map((c) => [c.candidate_id, c]));
+  const fromRules = new Map(rules.cards.map((c) => [c.candidate_id, c]));
+  const ids = new Set([...fromRules.keys(), ...fromModel.keys()]);
+  const cards: RewriteResponse['cards'] = [];
+  let used = 0;
+  for (const id of ids) {
+    const m = fromModel.get(id);
+    const ok = m && !checkCard({ ...m, card_type: m.card_type === 'cloze' ? 'cloze' : 'term_def' }, existing, minConfidence);
+    const pick = ok ? m : fromRules.get(id) ?? m;
+    if (ok) used++;
+    if (pick) cards.push(pick);
+  }
+  return {
+    cards,
+    model: used === 0 ? rules.model : used === ids.size ? model.model : `${model.model}+${rules.model}`,
+    prompt_version: used === 0 ? rules.prompt_version : model.prompt_version,
+    raw_output: { model: model.raw_output, rules: rules.raw_output },
+  };
+}

@@ -8,6 +8,7 @@ import { useSemester } from '@/data/derived';
 import { REJECT_REASON_TEXT, generateForNote, type GenerationSummary } from '@/data/generation';
 import type { Card as CardRow, Note } from '@/types/db';
 import { Badge, Button, Chip, Field, Row, T } from './components';
+import type { AutoCardsState } from './useAutoCards';
 import { radius, space, useColors } from './theme';
 
 export const PANEL_WIDTH = 320;
@@ -18,13 +19,15 @@ export const PANEL_WIDTH = 320;
  * on demand, approve them in place, and add your own — without leaving the page.
  */
 export function NoteCardsPanel({
-  note, body, ensureSaved, onClose,
+  note, body, ensureSaved, onClose, auto,
 }: {
   note: Note | null;
   body: string;
   /** Flushes the current text to storage (creating the note if needed) and returns it. */
   ensureSaved: () => Note | null;
   onClose: () => void;
+  /** Cards made by the local model while you type (see useAutoCards). */
+  auto?: AutoCardsState;
 }) {
   const c = useColors();
   const router = useRouter();
@@ -102,9 +105,13 @@ export function NoteCardsPanel({
         {/* ---------------- what's in this note ---------------- */}
         {label('In this note')}
         <T variant="body">
-          {candidates.length === 0 ? 'No definitions yet' : `${candidates.length} definition${candidates.length === 1 ? '' : 's'} found`}
+          {candidates.length === 0
+            ? auto?.ai ? 'No set-out definitions' : 'No definitions yet'
+            : `${candidates.length} definition${candidates.length === 1 ? '' : 's'} found`}
         </T>
-        {candidates.length === 0 ? (
+        {candidates.length === 0 && auto?.ai ? (
+          <T variant="small" muted>The local model also reads your whole note for terms written in plain sentences.</T>
+        ) : candidates.length === 0 ? (
           <T variant="small" muted>
             Write a term and its meaning — <T variant="small" style={{ fontWeight: '700' }}>**Term** — meaning</T>, “Term: meaning”, or “X refers to…” — and it shows up here.
           </T>
@@ -137,14 +144,27 @@ export function NoteCardsPanel({
           title={busy ? 'Making cards…' : makeLabel}
           onPress={generate}
           loading={busy}
-          disabled={busy || candidates.length === 0}
+          disabled={busy || (candidates.length === 0 && !auto?.ai)}
           small
         />
+        {auto?.on ? (
+          <Row gap={6}>
+            <Ionicons name="hardware-chip-outline" size={14} color={c.muted} />
+            <T variant="small" muted style={{ flex: 1 }}>
+              {auto.busy
+                ? 'Making cards from what you just wrote…'
+                : auto.last
+                  ? `Made ${auto.last.survived} card${auto.last.survived === 1 ? '' : 's'} from what you just wrote`
+                  : 'Cards appear here when you pause typing'}
+            </T>
+          </Row>
+        ) : null}
         {error ? <T variant="small" color={c.warn}>{error}</T> : null}
         {summary ? (
           <View style={{ gap: 2 }}>
             <T variant="small" muted>
               {summary.survived} ready for your OK · {summary.total - summary.survived} filtered out
+              {summary.model && summary.model !== 'rules' ? ' · written on this laptop’s NPU' : ''}
             </T>
             {Object.entries(summary.byReason).map(([k, v]) => (
               <T key={k} variant="small" muted>· {v} {REJECT_REASON_TEXT[k] ?? k}</T>

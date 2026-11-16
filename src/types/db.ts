@@ -261,7 +261,9 @@ export type PatternType =
   | 'heading_body'
   | 'glossary_row'
   | 'named_list_item'
-  | 'parenthetical_def';
+  | 'parenthetical_def'
+  /** Spotted by the local model on this laptop (see core/flashcards/modelFind.ts). */
+  | 'model_found';
 
 export interface GenerationEvent {
   id: string;

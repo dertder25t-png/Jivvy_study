@@ -13,3 +13,4 @@ supabase/functions/.env
 
 .vercel
 .env*
+__pycache__/

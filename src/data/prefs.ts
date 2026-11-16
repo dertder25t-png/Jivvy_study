@@ -39,6 +39,10 @@ export interface Prefs {
   learnShuffle: boolean;
   /** Card check suggestions this device was told to skip ("<card id>:<kind>"). */
   dismissedAdvice: string[];
+  /** Use the local card helper (scripts/npu-cards) on this laptop's NPU. Off by default: never synced. */
+  localAiEnabled: boolean;
+  /** With the helper on, make cards by itself a few seconds after you stop typing. */
+  localAiAuto: boolean;
 }
 
 /** The settings that follow the account rather than staying on one device. */
@@ -68,6 +72,8 @@ const DEFAULTS = (): Prefs => ({
   learnShuffle: false,
   learnCopySpeed: 3,
   dismissedAdvice: [],
+  localAiEnabled: false,
+  localAiAuto: true,
 });
 
 let current: Prefs = DEFAULTS();

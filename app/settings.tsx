@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { clearLocalData } from '@/data/backends';
 import { addSampleSemester } from '@/data/actions';
 import { prefs, usePrefs } from '@/data/prefs';
+import { localAiStatus, type LocalAiStatus } from '@/data/localAi';
 import { store } from '@/data/store';
 import { useSemester } from '@/data/derived';
 import { DAILY_CAP } from '@/core/notifications';
@@ -147,6 +148,8 @@ export default function Settings() {
         </Card>
       </Section>
 
+      {Platform.OS === 'web' ? <LocalAiSection /> : null}
+
       <Section title="Data">
         <Card>
           <SyncStatusPanel />
@@ -162,5 +165,53 @@ export default function Settings() {
       </Section>
       {msg ? <T variant="small" color="#B45309">{msg}</T> : null}
     </Screen>
+  );
+}
+
+/** The optional card helper on this laptop's NPU (scripts/npu-cards). Off unless switched on here. */
+function LocalAiSection() {
+  const p = usePrefs();
+  const [status, setStatus] = useState<LocalAiStatus | null | 'checking'>('checking');
+  const check = () => {
+    setStatus('checking');
+    void localAiStatus().then(setStatus);
+  };
+  useEffect(() => {
+    if (p.localAiEnabled) check();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.localAiEnabled]);
+
+  return (
+    <Section title="Local AI">
+      <Card>
+        <Row style={{ justifyContent: 'space-between' }}>
+          <T style={{ flex: 1 }}>Write cards with this laptop’s NPU</T>
+          <Switch value={p.localAiEnabled} onValueChange={(v) => prefs.set({ localAiEnabled: v })} />
+        </Row>
+        <T variant="small" muted>
+          Uses the Jivvy card helper running on this computer. Your notes never leave the laptop. When the helper isn’t
+          running, cards are made the usual way.
+        </T>
+        {p.localAiEnabled ? (
+          <>
+            <Row style={{ justifyContent: 'space-between' }}>
+              <T style={{ flex: 1 }}>Make cards while I write</T>
+              <Switch value={p.localAiAuto} onValueChange={(v) => prefs.set({ localAiAuto: v })} />
+            </Row>
+            <T variant="small" muted>A few seconds after you stop typing, new definitions become cards waiting for your OK.</T>
+            <Row style={{ flexWrap: 'wrap' }}>
+              <T variant="small" style={{ flex: 1 }}>
+                {status === 'checking'
+                  ? 'Looking for the helper…'
+                  : status
+                    ? `Helper running on the ${status.device} (${status.loaded ? 'model loaded' : 'model asleep — wakes on first use'})`
+                    : 'Helper not running. Start it with scripts/npu-cards/start.sh'}
+              </T>
+              <Button title="Check again" small variant="ghost" onPress={check} />
+            </Row>
+          </>
+        ) : null}
+      </Card>
+    </Section>
   );
 }

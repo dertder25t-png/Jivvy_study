@@ -17,6 +17,7 @@ import { store } from '@/data/store';
 import { Button, Chip, Empty, Row, Screen, T } from '@/ui/components';
 import { SIDEBAR_WIDTH, useLayout } from '@/ui/layout';
 import { NoteCardsPanel, PANEL_WIDTH } from '@/ui/NoteCardsPanel';
+import { useAutoCards } from '@/ui/useAutoCards';
 import { MarkdownEditor, type MarkdownEditorHandle } from '@/ui/MarkdownEditor';
 import { MarkdownView } from '@/ui/MarkdownView';
 import { space, useColors } from '@/ui/theme';
@@ -217,9 +218,10 @@ export default function NoteEditor() {
     });
   }, [panelOpen, progress]);
   const setPanel = (open: boolean) => prefs.set({ notePanelOpen: open });
+  const auto = useAutoCards(body, persist);
 
   const panel = mounted ? (
-    <NoteCardsPanel note={note} body={body} ensureSaved={persist} onClose={() => setPanel(false)} />
+    <NoteCardsPanel note={note} body={body} ensureSaved={persist} onClose={() => setPanel(false)} auto={auto} />
   ) : null;
 
   // ---------------------------------------------------------------- sub-notes
