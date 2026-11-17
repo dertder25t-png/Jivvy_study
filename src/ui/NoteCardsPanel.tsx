@@ -53,18 +53,36 @@ export function NoteCardsPanel({
 
   const makeLabel = candidates.length === 0 ? 'Make cards' : `Make ${candidates.length} card${candidates.length === 1 ? '' : 's'}`;
 
+  const [progress, setProgress] = useState<[number, number] | null>(null);
+  const [scanNote, setScanNote] = useState<string | null>(null);
+
   const generate = async () => {
     const saved = ensureSaved();
     if (!saved) return;
     setBusy(true);
     setError(null);
     setSummary(null);
+    setScanNote(null);
     try {
-      setSummary(await generateForNote(saved));
+      if (auto?.ai) {
+        // "Find cards in this note": the local model reads the whole note — no typing needed —
+        // and only cards for things that don't have one yet come back.
+        const f = await generateForNote(saved, { onlyNew: true, readAll: true, onProgress: (d, t) => setProgress([d, t]) });
+        if (f && !f.modelRan) {
+          setError('The local AI helper isn’t running on this laptop. Start it with scripts/npu-cards/start.sh, then try again.');
+        } else if (!f || f.survived === 0) {
+          setScanNote('Nothing new found — everything defined in this note already has a card.');
+        } else {
+          setSummary(f);
+        }
+      } else {
+        setSummary(await generateForNote(saved));
+      }
     } catch (e) {
       setError((e as Error).message || 'Something went wrong making cards.');
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -110,7 +128,7 @@ export function NoteCardsPanel({
             : `${candidates.length} definition${candidates.length === 1 ? '' : 's'} found`}
         </T>
         {candidates.length === 0 && auto?.ai ? (
-          <T variant="small" muted>The local model also reads your whole note for terms written in plain sentences.</T>
+          <T variant="small" muted>The local model can still find terms written in plain sentences.</T>
         ) : candidates.length === 0 ? (
           <T variant="small" muted>
             Write a term and its meaning — <T variant="small" style={{ fontWeight: '700' }}>**Term** — meaning</T>, “Term: meaning”, or “X refers to…” — and it shows up here.
@@ -141,12 +159,22 @@ export function NoteCardsPanel({
         ) : null}
 
         <Button
-          title={busy ? 'Making cards…' : makeLabel}
+          title={
+            auto?.ai
+              ? busy
+                ? progress && progress[1] > 1 ? `Reading your note… ${Math.min(progress[0] + 1, progress[1])} of ${progress[1]}` : 'Reading your note…'
+                : 'Find cards in this note'
+              : busy ? 'Making cards…' : makeLabel
+          }
           onPress={generate}
           loading={busy}
-          disabled={busy || (candidates.length === 0 && !auto?.ai)}
+          disabled={busy || (candidates.length === 0 && !auto?.ai) || (!!auto?.ai && !body.trim())}
           small
         />
+        {auto?.ai && !busy && !summary && !scanNote && !error ? (
+          <T variant="small" muted>The local model reads the whole note and suggests a card for each term it explains.</T>
+        ) : null}
+        {scanNote ? <T variant="small" muted>{scanNote}</T> : null}
         {auto?.on ? (
           <Row gap={6}>
             <Ionicons name="hardware-chip-outline" size={14} color={c.muted} />

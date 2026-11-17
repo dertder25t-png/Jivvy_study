@@ -27,8 +27,12 @@ export function useAutoCards(body: string, ensureSaved: () => Note | null): Auto
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<GenerationSummary | null>(null);
   const running = useRef(false);
+  // Only react to typing: opening a note isn't a reason to start the model
+  // ("Find cards in this note" is there for reading a note you didn't just write).
+  const opened = useRef(body);
 
   useEffect(() => {
+    if (body === opened.current) return;
     // The model can find definitions the patterns don't, so any real text is worth a look.
     if (!on || wordCount(body) < 6) return;
     const t = setTimeout(async () => {
