@@ -22,6 +22,7 @@ vi.mock('expo-crypto', () => ({ randomUUID: () => crypto.randomUUID() }));
 const { store, EMPTY_ROWS } = await import('./store');
 const { prefs } = await import('./prefs');
 const { generateForNote } = await import('./generation');
+const { fileNote } = await import('./actions');
 
 const body = `# Memory
 So today we talked about memory. Short term memory only holds about 7 items for 20-30 seconds unless you rehearse them. Chunking is grouping info into bigger meaningful units so you can remember more.
@@ -93,5 +94,15 @@ describe('finding cards with the local model', () => {
     const f = await generateForNote(note, { onlyNew: true, readAll: true });
     expect(f?.modelRan).toBe(false);
     expect(store.all('cards').map((k) => k.term)).toEqual(['Memory']); // the rules still work
+  });
+
+  it('works for a note with no class, and the cards follow the note when it gets one', async () => {
+    fakeHelper();
+    const unfiled = store.update('notes', note, { course_id: null });
+    const f = await generateForNote(unfiled, { onlyNew: true, readAll: true });
+    expect(f?.survived).toBe(3);
+    expect(store.all('cards').every((k) => k.course_id === null)).toBe(true);
+    fileNote(store.all('notes')[0], 'c9');
+    expect(store.all('cards').every((k) => k.course_id === 'c9')).toBe(true);
   });
 });

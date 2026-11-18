@@ -17,8 +17,13 @@ export default function Courses() {
       {sem.rows.courses.length === 0 ? (
         <Empty
           title="No courses yet"
-          body="Upload a syllabus and the course, its deadlines and its grade breakdown are created for you."
-          action={<Button title="Add a syllabus" onPress={() => router.push('/syllabus/add')} />}
+          body="Upload a syllabus and the course, its deadlines and its grade breakdown are created for you — or just add a course by name."
+          action={
+            <Row style={{ flexWrap: 'wrap', justifyContent: 'center' }}>
+              <Button title="Add a syllabus" onPress={() => router.push('/syllabus/add')} />
+              <Button title="Add a course without one" variant="secondary" onPress={() => router.push('/course/new')} />
+            </Row>
+          }
         />
       ) : null}
 
@@ -61,7 +66,10 @@ export default function Courses() {
       </Grid>
 
       {sem.rows.courses.length > 0 ? (
-        <Button title="Add another syllabus" variant="secondary" onPress={() => router.push('/syllabus/add')} style={{ alignSelf: isPhone ? 'stretch' : 'flex-start' }} />
+        <Row style={{ flexWrap: 'wrap', alignSelf: isPhone ? 'stretch' : 'flex-start' }}>
+          <Button title="Add another syllabus" variant="secondary" onPress={() => router.push('/syllabus/add')} style={isPhone ? { flex: 1 } : undefined} />
+          <Button title="Add a course" variant="secondary" onPress={() => router.push('/course/new')} style={isPhone ? { flex: 1 } : undefined} />
+        </Row>
       ) : null}
     </Screen>
   );

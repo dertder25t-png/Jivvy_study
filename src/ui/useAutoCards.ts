@@ -39,7 +39,7 @@ export function useAutoCards(body: string, ensureSaved: () => Note | null): Auto
       if (running.current) return;
       if (Platform.OS === 'web' && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       const note = ensureSaved();
-      if (!note?.course_id) return; // cards need a class; the panel already asks for one
+      if (!note) return;
       running.current = true;
       setBusy(true);
       try {

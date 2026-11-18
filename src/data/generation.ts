@@ -74,7 +74,6 @@ export function generateForNote(note: Note, opts: GenerateOptions = {}): Promise
 let queue: Promise<unknown> = Promise.resolve();
 
 async function generateNow(note: Note, opts: GenerateOptions): Promise<GenerationSummary | null> {
-  if (!note.course_id) throw new Error('File this note under a class first.');
   let candidates = extractCandidates(note.body);
   const events = store.all('generation_events').filter((e) => e.source_note_id === note.id);
   // Passages this note already made cards from (by either the rules or the model).

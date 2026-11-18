@@ -117,6 +117,7 @@ export default function AddSyllabus() {
           <T variant="small">{error}</T>
         </Card>
       ) : null}
+      <Button title="No syllabus? Add the course by name" variant="ghost" onPress={() => router.push('/course/new')} />
       <T variant="small" muted>
         Syllabi are private to you. If a classmate already uploaded the same document, we reuse the reading instead of processing it again.
       </T>

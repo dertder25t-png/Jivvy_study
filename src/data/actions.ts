@@ -40,6 +40,22 @@ export function ensureTerm(now: Date): Term {
   return store.insert('terms', { id: newId(), user_id: store.userId, ...g });
 }
 
+// ---------------------------------------------------------------- course without a syllabus
+/** A course you set up by hand — no syllabus needed. Deadlines and grades can be added later. */
+export function createCourse(input: { name: string; code?: string | null; instructor_name?: string | null; instructor_email?: string | null }): Course {
+  const term = ensureTerm(new Date());
+  const clean = (v?: string | null) => (v && v.trim() ? v.trim() : null);
+  const course: Course = {
+    id: newId(), user_id: store.userId, term_id: term.id,
+    name: input.name.trim(), code: clean(input.code), section: null,
+    instructor_name: clean(input.instructor_name), instructor_email: clean(input.instructor_email),
+    color: COURSE_COLORS[store.all('courses').length % COURSE_COLORS.length], meetings: [], created_at: nowIso(),
+  };
+  store.insert('courses', course);
+  logMetric('course_created', { via: 'manual' });
+  return course;
+}
+
 // ---------------------------------------------------------------- syllabus commit
 export interface CommitInput {
   normalized: NormalizedSyllabus;
@@ -306,7 +322,15 @@ export function saveNote(note: Note, patch: Partial<Pick<Note, 'title' | 'body' 
 export function fileNote(note: Note, courseId: string | null): Note {
   const topics = store.all('topics').filter((t) => t.course_id === courseId);
   const topic = courseId ? topicForDate(topics, localDateString(new Date(note.created_at), prefs.get().tz)) : null;
-  return store.update('notes', note, { course_id: courseId, topic_id: topic?.id ?? null, course_inferred: false });
+  const updated = store.update('notes', note, { course_id: courseId, topic_id: topic?.id ?? null, course_inferred: false });
+  // Cards made from this note before it had a class come along with it. Cards already filed
+  // somewhere (on purpose) stay where they are.
+  if (courseId) {
+    for (const k of store.all('cards').filter((c) => c.source_note_id === note.id && !c.course_id)) {
+      store.update('cards', k, { course_id: courseId, topic_id: topic?.id ?? null });
+    }
+  }
+  return updated;
 }
 
 /** Deleting a note promotes its sub-notes to top-level rather than taking them down too. */

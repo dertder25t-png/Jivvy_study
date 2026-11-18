@@ -149,11 +149,12 @@ export function NoteCardsPanel({
           </>
         )}
 
-        {note && !note.course_id && sem.rows.courses.length > 0 ? (
+        {note && !note.course_id ? (
           <View style={{ gap: 6 }}>
             <T variant="small" muted>File this under a class? (optional — cards work fine without one)</T>
             <Row style={{ flexWrap: 'wrap' }}>
               {sem.rows.courses.map((k) => <Chip key={k.id} label={k.code ?? k.name} small color={k.color} onPress={() => fileNote(note, k.id)} />)}
+              <Chip label="+ New class" small onPress={() => router.push(`/course/new?noteId=${note.id}`)} />
             </Row>
           </View>
         ) : null}

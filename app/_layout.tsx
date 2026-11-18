@@ -126,6 +126,7 @@ export default function RootLayout() {
         <Stack.Screen name="comeback" options={{ title: '', headerBackVisible: false }} />
         <Stack.Screen name="syllabus/add" options={{ title: 'Add a syllabus' }} />
         <Stack.Screen name="syllabus/review" options={{ title: 'Look right?' }} />
+        <Stack.Screen name="course/new" options={{ title: 'Add a course' }} />
         <Stack.Screen name="course/[id]" options={{ title: '' }} />
         <Stack.Screen name="assignment/[id]" options={{ title: '' }} />
         <Stack.Screen name="grading/[id]" options={{ title: 'Grading setup' }} />
